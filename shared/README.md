@@ -15,7 +15,7 @@ No third-party imports may appear here. That constraint is what lets one definit
 
 | Module | Contract for |
 |---|---|
-| `text.py` | tokenize (`/v1/text/*`) |
+| `text.py` | tokenize, space (`/v1/text/*`) |
 
 Most request models are batch-shaped (a list of inputs) and the matching response carries results aligned to that input order.
 
