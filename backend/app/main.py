@@ -6,6 +6,7 @@ read-only dictionary cache is opened once at startup and held on `app.state`
 (reused across requests, never re-opened per request).
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,16 +17,30 @@ from app.api.v1 import router as v1_router
 from app.config import Settings, get_settings
 from app.dicts import DictCache
 from app.errors import register_exception_handlers
+from app.text.tokenizer import Tokenizer
+
+logger = logging.getLogger("jp_utils.backend")
 
 
 def _cache_path(settings: Settings) -> Path | None:
     return Path(settings.dict_cache_path) if settings.dict_cache_path else None
 
 
+def _build_tokenizer() -> Tokenizer | None:
+    try:
+        tokenizer = Tokenizer()
+        tokenizer.warmup()
+        return tokenizer
+    except Exception:
+        logger.exception("Tokenizer failed to initialize; /v1/text will be unavailable")
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.dict_cache = DictCache.open(_cache_path(settings))
+    app.state.tokenizer = _build_tokenizer()
     try:
         yield
     finally:

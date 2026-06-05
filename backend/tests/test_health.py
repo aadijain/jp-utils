@@ -16,6 +16,7 @@ def test_health_is_public_and_degraded_without_cache(client: TestClient) -> None
     assert body["service"] == "jp-utils"
     assert body["status"] == "degraded"
     assert body["cache_built"] is False
+    assert body["tokenizer_ready"] is False
     assert body["dicts"] == []
 
 
@@ -34,7 +35,9 @@ def test_health_ok_with_built_cache(built_cache: Path, monkeypatch: pytest.Monke
 
     assert resp.status_code == 200
     body = resp.json()
+    # `with` runs the lifespan, which also builds the tokenizer.
     assert body["status"] == "ok"
     assert body["cache_built"] is True
+    assert body["tokenizer_ready"] is True
     assert {d["name"] for d in body["dicts"]} == {"meanings", "frequencies", "furigana"}
     assert all(d["loaded"] for d in body["dicts"])
