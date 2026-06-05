@@ -1,0 +1,36 @@
+# Runs the full green set before each commit. Install once: `pre-commit install`.
+# The two pytest suites run separately - a single combined invocation collides on
+# the two `tests` packages and errors at collection.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest-backend
+        name: pytest backend
+        entry: uv run pytest backend/tests
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest-addon
+        name: pytest addon
+        entry: uv run pytest addon/tests
+        language: system
+        pass_filenames: false
+        always_run: true

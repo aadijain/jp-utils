@@ -10,3 +10,14 @@
 .DS_Store
 .idea/
 *.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local data / build artifacts
+*.db
+backend/data/dict/
