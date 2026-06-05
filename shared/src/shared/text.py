@@ -55,3 +55,21 @@ class SpacingRequest:
 @dataclass
 class SpacingResponse:
     results: list[str] = field(default_factory=list)  # spaced text, aligned with request.texts
+
+
+class Conversion(StrEnum):
+    HIRA_TO_KATA = "hira_to_kata"  # hiragana -> katakana
+    KATA_TO_HIRA = "kata_to_hira"  # katakana -> hiragana
+    TO_FULLWIDTH = "to_fullwidth"  # half-width kana/ASCII/digits -> full-width
+    TO_HALFWIDTH = "to_halfwidth"  # full-width kana/ASCII/digits -> half-width
+
+
+@dataclass
+class ConvertRequest:
+    texts: list[str]  # batch-first
+    conversion: Conversion
+
+
+@dataclass
+class ConvertResponse:
+    results: list[str] = field(default_factory=list)  # converted text, aligned with request.texts
