@@ -57,6 +57,29 @@ class SpacingResponse:
     results: list[str] = field(default_factory=list)  # spaced text, aligned with request.texts
 
 
+@dataclass
+class FuriganaSegment:
+    text: str
+    reading: str  # ruby over `text`; "" means render `text` as-is (no ruby)
+
+
+@dataclass
+class FuriganaText:
+    text: str
+    segments: list[FuriganaSegment] = field(default_factory=list)  # concatenated, reproduce `text`
+
+
+@dataclass
+class FuriganaRequest:
+    texts: list[str]  # batch-first
+    mode: SplitMode = SplitMode.C
+
+
+@dataclass
+class FuriganaResponse:
+    results: list[FuriganaText] = field(default_factory=list)  # aligned with request.texts
+
+
 class Conversion(StrEnum):
     HIRA_TO_KATA = "hira_to_kata"  # hiragana -> katakana
     KATA_TO_HIRA = "kata_to_hira"  # katakana -> hiragana

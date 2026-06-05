@@ -7,13 +7,18 @@ app.state - never constructed per request.
 
 from fastapi import APIRouter, Depends, Request
 
+from app.dicts import DictCache
 from app.errors import APIError
 from app.text.convert import convert
+from app.text.furigana import annotate
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from shared.text import (
     ConvertRequest,
     ConvertResponse,
+    FuriganaRequest,
+    FuriganaResponse,
+    FuriganaText,
     SpacingRequest,
     SpacingResponse,
     TokenizedText,
@@ -29,6 +34,11 @@ def get_tokenizer(request: Request) -> Tokenizer:
     if tokenizer is None:
         raise APIError(503, "tokenizer_unavailable", "Tokenizer is not available")
     return tokenizer
+
+
+def get_dict_cache(request: Request) -> DictCache | None:
+    """The dict cache is optional: furigana degrades to alignment without it."""
+    return getattr(request.app.state, "dict_cache", None)
 
 
 @router.post("/tokenize")
@@ -51,6 +61,20 @@ def space(
     """Insert `separator` at word boundaries. Results aligned with `req.texts`."""
     results = [space_text(tokenizer, text, req.separator, req.mode) for text in req.texts]
     return SpacingResponse(results=results)
+
+
+@router.post("/furigana")
+def furigana(
+    req: FuriganaRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
+    cache: DictCache | None = Depends(get_dict_cache),
+) -> FuriganaResponse:
+    """Annotate a batch of texts with furigana. Results aligned with `req.texts`."""
+    results = [
+        FuriganaText(text=text, segments=annotate(tokenizer, text, cache, req.mode))
+        for text in req.texts
+    ]
+    return FuriganaResponse(results=results)
 
 
 @router.post("/convert")
