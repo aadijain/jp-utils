@@ -16,6 +16,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /space` | Insert spaces at word boundaries |
 | `POST /furigana` | Annotate text with per-word readings (curated JmdictFurigana, falling back to reading alignment) |
 | `POST /convert` | hiragana/katakana, romaji, and full-width/half-width conversion |
+| `POST /meaning` | Dictionary definitions (Jitendex) |
 
 ## Quick start
 
