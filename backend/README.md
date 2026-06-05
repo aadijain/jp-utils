@@ -24,7 +24,10 @@ From this directory:
 uv sync                                          # install dependencies (whole workspace)
 export JP_UTILS_API_TOKEN=your-secret-token      # required for /v1 routes
 
-# one-time: build the dictionary lookup cache
+# one-time: download the reference dictionaries and build the lookup cache
+uv run python ../scripts/fetch_jitendex.py
+uv run python ../scripts/fetch_freq_dict.py
+uv run python ../scripts/fetch_jmdict_furigana.py
 uv run python -m app.dicts                       # parse the dicts into a SQLite cache
 
 uv run uvicorn app.main:app --reload             # start the dev server
@@ -42,16 +45,19 @@ Open <http://127.0.0.1:8000/docs> for the API explorer, or <http://127.0.0.1:800
 | `uv run ruff check .` | Lint (ruff config is at the repo root) |
 | `uv run ruff format .` | Format |
 | `uv run python -m app.dicts [--force]` | Build the dictionary lookup cache |
+| `uv run python ../scripts/fetch_jitendex.py [--force]` | Download the Jitendex dictionary |
+| `uv run python ../scripts/fetch_freq_dict.py [--force]` | Download the JPDB frequency list |
+| `uv run python ../scripts/fetch_jmdict_furigana.py [--force]` | Download JmdictFurigana |
 
 ## Dictionary setup
 
 The backend reads three [Yomitan](https://yomitan.wiki)-format dictionaries and parses them once into a read-only SQLite cache (`python -m app.dicts`):
 
-| Dictionary | Provides |
-|---|---|
-| [Jitendex](https://jitendex.org) | meanings |
-| [JPDB frequency list](https://github.com/MarvNC/jpdb-freq-list) | word frequency |
-| [JmdictFurigana](https://github.com/Doublevil/JmdictFurigana) | furigana segmentation |
+| Dictionary | Provides | Fetch with |
+|---|---|---|
+| [Jitendex](https://jitendex.org) | meanings | `scripts/fetch_jitendex.py` |
+| [JPDB frequency list](https://github.com/MarvNC/jpdb-freq-list) | word frequency | `scripts/fetch_freq_dict.py` |
+| [JmdictFurigana](https://github.com/Doublevil/JmdictFurigana) | furigana segmentation | `scripts/fetch_jmdict_furigana.py` |
 
 Each dictionary is located in this order:
 
