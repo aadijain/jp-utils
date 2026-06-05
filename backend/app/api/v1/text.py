@@ -11,6 +11,7 @@ from app.dicts import DictCache
 from app.errors import APIError
 from app.text.convert import convert
 from app.text.furigana import annotate
+from app.text.meaning import lookup_meaning
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from shared.text import (
@@ -19,6 +20,8 @@ from shared.text import (
     FuriganaRequest,
     FuriganaResponse,
     FuriganaText,
+    MeaningRequest,
+    MeaningResponse,
     SpacingRequest,
     SpacingResponse,
     TokenizedText,
@@ -39,6 +42,14 @@ def get_tokenizer(request: Request) -> Tokenizer:
 def get_dict_cache(request: Request) -> DictCache | None:
     """The dict cache is optional: furigana degrades to alignment without it."""
     return getattr(request.app.state, "dict_cache", None)
+
+
+def require_dict_cache(request: Request) -> DictCache:
+    """For endpoints that can't work without the dict cache (meaning, frequency)."""
+    cache = getattr(request.app.state, "dict_cache", None)
+    if cache is None:
+        raise APIError(503, "dictionary_unavailable", "Dictionary cache is not built")
+    return cache
 
 
 @router.post("/tokenize")
@@ -81,3 +92,12 @@ def furigana(
 def convert_text(req: ConvertRequest) -> ConvertResponse:
     """Apply a kana/width conversion to a batch of texts (pure; no models needed)."""
     return ConvertResponse(results=[convert(text, req.conversion) for text in req.texts])
+
+
+@router.post("/meaning")
+def meaning(
+    req: MeaningRequest,
+    cache: DictCache = Depends(require_dict_cache),
+) -> MeaningResponse:
+    """Look up dictionary meanings for a batch of words. Aligned with `req.queries`."""
+    return MeaningResponse(results=[lookup_meaning(cache, q) for q in req.queries])
