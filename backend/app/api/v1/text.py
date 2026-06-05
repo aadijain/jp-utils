@@ -8,9 +8,12 @@ app.state - never constructed per request.
 from fastapi import APIRouter, Depends, Request
 
 from app.errors import APIError
+from app.text.convert import convert
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from shared.text import (
+    ConvertRequest,
+    ConvertResponse,
     SpacingRequest,
     SpacingResponse,
     TokenizedText,
@@ -48,3 +51,9 @@ def space(
     """Insert `separator` at word boundaries. Results aligned with `req.texts`."""
     results = [space_text(tokenizer, text, req.separator, req.mode) for text in req.texts]
     return SpacingResponse(results=results)
+
+
+@router.post("/convert")
+def convert_text(req: ConvertRequest) -> ConvertResponse:
+    """Apply a kana/width conversion to a batch of texts (pure; no models needed)."""
+    return ConvertResponse(results=[convert(text, req.conversion) for text in req.texts])
