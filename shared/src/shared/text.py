@@ -43,3 +43,15 @@ class TokenizeRequest:
 @dataclass
 class TokenizeResponse:
     results: list[TokenizedText] = field(default_factory=list)  # aligned with request.texts
+
+
+@dataclass
+class SpacingRequest:
+    texts: list[str]  # batch-first
+    mode: SplitMode = SplitMode.C
+    separator: str = " "  # inserted at word (token) boundaries
+
+
+@dataclass
+class SpacingResponse:
+    results: list[str] = field(default_factory=list)  # spaced text, aligned with request.texts

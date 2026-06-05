@@ -8,8 +8,15 @@ app.state - never constructed per request.
 from fastapi import APIRouter, Depends, Request
 
 from app.errors import APIError
+from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
-from shared.text import TokenizedText, TokenizeRequest, TokenizeResponse
+from shared.text import (
+    SpacingRequest,
+    SpacingResponse,
+    TokenizedText,
+    TokenizeRequest,
+    TokenizeResponse,
+)
 
 router = APIRouter(prefix="/text", tags=["text"])
 
@@ -31,3 +38,13 @@ def tokenize(
         TokenizedText(text=text, tokens=tokenizer.tokenize(text, req.mode)) for text in req.texts
     ]
     return TokenizeResponse(results=results)
+
+
+@router.post("/space")
+def space(
+    req: SpacingRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
+) -> SpacingResponse:
+    """Insert `separator` at word boundaries. Results aligned with `req.texts`."""
+    results = [space_text(tokenizer, text, req.separator, req.mode) for text in req.texts]
+    return SpacingResponse(results=results)
