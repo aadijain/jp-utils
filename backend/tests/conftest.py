@@ -156,3 +156,15 @@ def text_client(settings: Settings, tokenizer) -> TestClient:
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.tokenizer = tokenizer
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def text_client_with_dicts(settings: Settings, tokenizer, built_cache) -> TestClient:
+    """Client with both the tokenizer and the (synthetic) dict cache on app.state."""
+    from app.dicts import DictCache
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.state.tokenizer = tokenizer
+    app.state.dict_cache = DictCache.open(built_cache)
+    return TestClient(app, raise_server_exceptions=False)
