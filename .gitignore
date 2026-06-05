@@ -1,0 +1,12 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+*.swp
