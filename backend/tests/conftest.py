@@ -31,3 +31,12 @@ def tokenizer():
     from app.text.tokenizer import Tokenizer
 
     return Tokenizer()
+
+
+@pytest.fixture
+def text_client(settings: Settings, tokenizer) -> TestClient:
+    """Client with the tokenizer injected on app.state (no lifespan needed)."""
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.state.tokenizer = tokenizer
+    return TestClient(app, raise_server_exceptions=False)
