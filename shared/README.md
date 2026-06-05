@@ -16,6 +16,7 @@ No third-party imports may appear here. That constraint is what lets one definit
 | Module | Contract for |
 |---|---|
 | `text.py` | tokenize, space, convert (`/v1/text/*`) |
+| `errors.py` | `ErrorResponse` / `ErrorBody` - the one error shape every failure is serialized into |
 
 Most request models are batch-shaped (a list of inputs) and the matching response carries results aligned to that input order.
 
