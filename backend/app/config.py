@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # and the server fails closed (see app.auth).
     api_token: str = ""
 
+    # Read-only dictionary cache location. Empty -> dicts.paths.default_cache_path().
+    dict_cache_path: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
