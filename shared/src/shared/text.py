@@ -98,3 +98,33 @@ class ConvertRequest:
 @dataclass
 class ConvertResponse:
     results: list[str] = field(default_factory=list)  # converted text, aligned with request.texts
+
+
+@dataclass
+class MeaningQuery:
+    lemma: str  # dictionary form to look up
+    reading: str | None = None  # optional disambiguation (hira or kata accepted)
+
+
+@dataclass
+class MeaningEntry:
+    reading: str
+    glosses: list[str]
+    jlpt: int | None = None
+
+
+@dataclass
+class MeaningResult:
+    lemma: str
+    reading: str | None  # echoes the query reading
+    entries: list[MeaningEntry] = field(default_factory=list)  # best-first; empty if not found
+
+
+@dataclass
+class MeaningRequest:
+    queries: list[MeaningQuery]  # batch-first
+
+
+@dataclass
+class MeaningResponse:
+    results: list[MeaningResult] = field(default_factory=list)  # aligned with request.queries
