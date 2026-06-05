@@ -23,3 +23,11 @@ def client(settings: Settings) -> TestClient:
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_TOKEN}"}
+
+
+@pytest.fixture(scope="session")
+def tokenizer():
+    """One real SudachiPy tokenizer, reused across tests (dict load is slow)."""
+    from app.text.tokenizer import Tokenizer
+
+    return Tokenizer()
