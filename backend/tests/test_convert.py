@@ -14,6 +14,12 @@ def test_convert_kana() -> None:
     assert convert("タベル", Conversion.KATA_TO_HIRA) == "たべる"
 
 
+def test_convert_romaji() -> None:
+    assert convert("にほんご", Conversion.KANA_TO_ROMAJI) == "nihongo"
+    assert convert("スシ", Conversion.KANA_TO_ROMAJI) == "sushi"  # katakana folded first
+    assert convert("nihongo", Conversion.ROMAJI_TO_KANA) == "にほんご"
+
+
 def test_convert_width() -> None:
     assert convert("ｱｲｳ", Conversion.TO_FULLWIDTH) == "アイウ"
     assert convert("ＡＢＣ１２３", Conversion.TO_HALFWIDTH) == "ABC123"

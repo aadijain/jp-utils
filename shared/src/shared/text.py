@@ -60,6 +60,8 @@ class SpacingResponse:
 class Conversion(StrEnum):
     HIRA_TO_KATA = "hira_to_kata"  # hiragana -> katakana
     KATA_TO_HIRA = "kata_to_hira"  # katakana -> hiragana
+    KANA_TO_ROMAJI = "kana_to_romaji"  # hiragana/katakana -> romaji
+    ROMAJI_TO_KANA = "romaji_to_kana"  # romaji -> hiragana
     TO_FULLWIDTH = "to_fullwidth"  # half-width kana/ASCII/digits -> full-width
     TO_HALFWIDTH = "to_halfwidth"  # full-width kana/ASCII/digits -> half-width
 
