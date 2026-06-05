@@ -1,0 +1,30 @@
+[tool.uv.workspace]
+members = ["backend", "shared"]
+
+[dependency-groups]
+dev = ["pyright>=1.1.390"]
+
+[tool.pyright]
+# Type-check first-party source only. Test files lean on loose stand-ins (None
+# clients, duck-typed fakes, unannotated overrides) that intentionally violate the
+# production type contracts, so checking them adds noise without catching real bugs.
+include = ["backend/app", "shared/src"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "shared", "tests"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection defaults (Depends/Header/...) are the idiomatic
+# pattern, not mutable-default bugs.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query"]

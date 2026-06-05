@@ -1,0 +1,8 @@
+"""Stateless text service router (/v1/text).
+
+Pure functions over read-only reference data; no user state. Must not import the vocab module.
+"""
+
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/text", tags=["text"])
