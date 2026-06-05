@@ -7,6 +7,8 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "pydantic-settings>=2.7",
+    "sudachipy>=0.6.8",
+    "sudachidict-core>=20240716",
     "shared",
 ]
 
