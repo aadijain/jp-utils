@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from app.dicts import DictCache
 from app.errors import APIError
 from app.text.convert import convert
+from app.text.frequency import lookup_frequency
 from app.text.furigana import annotate
 from app.text.meaning import lookup_meaning
 from app.text.spacing import space_text
@@ -17,6 +18,8 @@ from app.text.tokenizer import Tokenizer
 from shared.text import (
     ConvertRequest,
     ConvertResponse,
+    FrequencyRequest,
+    FrequencyResponse,
     FuriganaRequest,
     FuriganaResponse,
     FuriganaText,
@@ -101,3 +104,12 @@ def meaning(
 ) -> MeaningResponse:
     """Look up dictionary meanings for a batch of words. Aligned with `req.queries`."""
     return MeaningResponse(results=[lookup_meaning(cache, q) for q in req.queries])
+
+
+@router.post("/frequency")
+def frequency(
+    req: FrequencyRequest,
+    cache: DictCache = Depends(require_dict_cache),
+) -> FrequencyResponse:
+    """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
+    return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
