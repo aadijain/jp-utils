@@ -107,9 +107,33 @@ class MeaningQuery:
 
 
 @dataclass
+class ExampleSegment:
+    text: str  # a run of the example sentence
+    reading: str = ""  # ruby over `text`; "" means render `text` as-is (no ruby)
+    keyword: bool = False  # part of the highlighted headword occurrence in the sentence
+
+
+@dataclass
+class MeaningExample:
+    ja: str  # example sentence (plain text, ruby stripped)
+    en: str = ""  # English translation; "" if none
+    # Furigana + keyword segmentation of `ja` (concatenating `text` reproduces it);
+    # empty when the source carried no ruby. Lets a consumer render ruby and
+    # highlight the headword without re-tokenizing or a locate call.
+    segments: list["ExampleSegment"] = field(default_factory=list)
+
+
+@dataclass
+class MeaningSense:
+    glosses: list[str]  # synonymous phrasings of one meaning
+    pos: list[str] = field(default_factory=list)  # part-of-speech labels for this sense
+    examples: list[MeaningExample] = field(default_factory=list)
+
+
+@dataclass
 class MeaningEntry:
     reading: str
-    glosses: list[str]
+    senses: list[MeaningSense]  # distinct meanings, each with its glosses/pos/examples
     jlpt: int | None = None
 
 
@@ -118,6 +142,7 @@ class MeaningResult:
     lemma: str
     reading: str | None  # echoes the query reading
     entries: list[MeaningEntry] = field(default_factory=list)  # best-first; empty if not found
+    all_readings: list[str] = field(default_factory=list)  # every distinct reading of the lemma
 
 
 @dataclass
