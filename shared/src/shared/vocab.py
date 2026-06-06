@@ -31,6 +31,7 @@ class VocabSource(StrEnum):
 
     MANUAL = "manual"  # a deliberate user entry
     ANKI = "anki"  # derived from Anki cards by the start-sweep
+    ANKI_BACKFILL = "anki-backfill"  # one-time backfill from studied Anki sentences
 
 
 class WordStatus(StrEnum):
