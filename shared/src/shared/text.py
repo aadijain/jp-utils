@@ -128,3 +128,26 @@ class MeaningRequest:
 @dataclass
 class MeaningResponse:
     results: list[MeaningResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
+class FrequencyQuery:
+    term: str  # word form to rank (surface or dictionary form)
+    reading: str | None = None  # fallback if the term form isn't ranked (hira/kata accepted)
+
+
+@dataclass
+class FrequencyResult:
+    term: str
+    reading: str | None
+    rank: int | None  # JPDB rank, lower = more frequent; None if not ranked
+
+
+@dataclass
+class FrequencyRequest:
+    queries: list[FrequencyQuery]  # batch-first
+
+
+@dataclass
+class FrequencyResponse:
+    results: list[FrequencyResult] = field(default_factory=list)  # aligned with request.queries
