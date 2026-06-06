@@ -205,6 +205,16 @@ def text_client(settings: Settings, tokenizer) -> TestClient:
 
 
 @pytest.fixture
+def vocab_store(tmp_path: Path):
+    """A fresh vocab store backed by a temp db."""
+    from app.vocab import VocabStore
+
+    store = VocabStore.open(tmp_path / "vocab.db")
+    yield store
+    store.close()
+
+
+@pytest.fixture
 def text_client_with_dicts(settings: Settings, tokenizer, built_cache) -> TestClient:
     """Client with both the tokenizer and the (synthetic) dict cache on app.state."""
     from app.dicts import DictCache
