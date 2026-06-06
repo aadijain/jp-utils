@@ -16,6 +16,7 @@ No third-party imports may appear here. That constraint is what lets one definit
 | Module | Contract for |
 |---|---|
 | `text.py` | tokenize, space, furigana, convert, meaning, frequency, normalize, audio (`/v1/text/*`) |
+| `vocab.py` | record words, filter-by-status, status, export; the `VocabWord` / `WordStatus` / `VocabAction` types (`/v1/vocab/*`) |
 | `health.py` | `HealthResponse` / `DictStatus` for the public `/health` endpoint |
 | `errors.py` | `ErrorResponse` / `ErrorBody` - the one error shape every failure is serialized into |
 
@@ -25,6 +26,7 @@ Most request models are batch-shaped (a list of inputs) and the matching respons
 
 ```python
 from shared.text import TokenizeRequest, TokenizeResponse
+from shared.vocab import VocabWord, FilterByStatusRequest
 ```
 
 The package layout is `src/shared/` (a src-layout hatchling package). The backend depends on it via `[tool.uv.sources] shared = { workspace = true }`; the add-on never declares it as a dependency - it is vendored at build time instead.
