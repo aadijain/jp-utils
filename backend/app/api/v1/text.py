@@ -5,10 +5,12 @@ vocab module. Shared resources (the tokenizer, the dict cache) are read from
 app.state - never constructed per request.
 """
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 
 from app.dicts import DictCache
 from app.errors import APIError
+from app.text.audio import AudioProxy
 from app.text.convert import convert
 from app.text.frequency import lookup_frequency
 from app.text.furigana import annotate
@@ -17,6 +19,8 @@ from app.text.normalize import normalize
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from shared.text import (
+    AudioRequest,
+    AudioResponse,
     ConvertRequest,
     ConvertResponse,
     FrequencyRequest,
@@ -56,6 +60,13 @@ def require_dict_cache(request: Request) -> DictCache:
     if cache is None:
         raise APIError(503, "dictionary_unavailable", "Dictionary cache is not built")
     return cache
+
+
+def get_audio_proxy(request: Request) -> AudioProxy:
+    proxy: AudioProxy | None = getattr(request.app.state, "audio_proxy", None)
+    if proxy is None:
+        raise APIError(503, "audio_unavailable", "Audio proxy is not configured")
+    return proxy
 
 
 @router.post("/tokenize")
@@ -126,3 +137,21 @@ def normalize_text(
     """Deinflect each surface to its canonical lemma + reading. Aligned with `req.surfaces`."""
     results = [normalize(tokenizer, surface, req.mode) for surface in req.surfaces]
     return NormalizeResponse(results=results)
+
+
+@router.post("/audio")
+def audio(
+    req: AudioRequest,
+    proxy: AudioProxy = Depends(get_audio_proxy),
+) -> AudioResponse:
+    """Proxy the local audio server for a batch of words. Aligned with `req.queries`.
+
+    Each result carries the chosen source's audio as base64 (`data`), or `data=None`
+    when no source matched (not an error). A transport failure (server down) maps to
+    a 502 so the whole batch fails loudly rather than silently dropping audio.
+    """
+    try:
+        results = [proxy.lookup(q, req.sources) for q in req.queries]
+    except httpx.HTTPError as exc:
+        raise APIError(502, "audio_unavailable", f"Audio server request failed: {exc}") from exc
+    return AudioResponse(results=results)
