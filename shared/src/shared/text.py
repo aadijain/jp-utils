@@ -107,9 +107,22 @@ class MeaningQuery:
 
 
 @dataclass
+class MeaningExample:
+    ja: str  # example sentence (plain text, ruby stripped)
+    en: str = ""  # English translation; "" if none
+
+
+@dataclass
+class MeaningSense:
+    glosses: list[str]  # synonymous phrasings of one meaning
+    pos: list[str] = field(default_factory=list)  # part-of-speech labels for this sense
+    examples: list[MeaningExample] = field(default_factory=list)
+
+
+@dataclass
 class MeaningEntry:
     reading: str
-    glosses: list[str]
+    senses: list[MeaningSense]  # distinct meanings, each with its glosses/pos/examples
     jlpt: int | None = None
 
 
@@ -118,6 +131,7 @@ class MeaningResult:
     lemma: str
     reading: str | None  # echoes the query reading
     entries: list[MeaningEntry] = field(default_factory=list)  # best-first; empty if not found
+    all_readings: list[str] = field(default_factory=list)  # every distinct reading of the lemma
 
 
 @dataclass

@@ -17,7 +17,8 @@ TEST_TOKEN = "test-token"
 # downloaded dictionaries.
 
 _JITENDEX_ROWS = [
-    # 食べる: structured-content glossary, two senses (every phrasing per sense kept).
+    # 食べる: structured content with a sense-group (shared POS) holding two senses;
+    # sense 1 carries an example sentence (ruby in the Japanese line is stripped).
     [
         "食べる",
         "たべる",
@@ -28,19 +29,64 @@ _JITENDEX_ROWS = [
             {
                 "type": "structured-content",
                 "content": {
-                    "tag": "ol",
+                    "tag": "div",
+                    "data": {"content": "sense-group"},
                     "content": [
                         {
-                            "tag": "li",
-                            "data": {"content": "sense"},
-                            "content": {
-                                "tag": "ul",
-                                "data": {"content": "glossary"},
-                                "content": {"tag": "li", "content": "to eat"},
-                            },
+                            "tag": "span",
+                            "data": {"content": "part-of-speech-info"},
+                            "content": "1-dan",
                         },
                         {
-                            "tag": "li",
+                            "tag": "span",
+                            "data": {"content": "part-of-speech-info"},
+                            "content": "transitive",
+                        },
+                        {
+                            "tag": "div",
+                            "data": {"content": "sense"},
+                            "content": [
+                                {
+                                    "tag": "ul",
+                                    "data": {"content": "glossary"},
+                                    "content": {"tag": "li", "content": "to eat"},
+                                },
+                                {
+                                    "tag": "div",
+                                    "data": {"content": "extra-info"},
+                                    "content": {
+                                        "tag": "div",
+                                        "data": {"content": "example-sentence"},
+                                        "content": [
+                                            {
+                                                "tag": "div",
+                                                "data": {"content": "example-sentence-a"},
+                                                "content": {
+                                                    "tag": "span",
+                                                    "content": [
+                                                        {
+                                                            "tag": "ruby",
+                                                            "content": [
+                                                                "寿司",
+                                                                {"tag": "rt", "content": "すし"},
+                                                            ],
+                                                        },
+                                                        "を食べる",
+                                                    ],
+                                                },
+                                            },
+                                            {
+                                                "tag": "div",
+                                                "data": {"content": "example-sentence-b"},
+                                                "content": "to eat sushi",
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                        {
+                            "tag": "div",
                             "data": {"content": "sense"},
                             "content": {
                                 "tag": "ul",

@@ -14,9 +14,16 @@ from typing import Any, NamedTuple
 
 from app.text.convert import kata_to_hira
 
-# Max glosses kept per headword, across all senses and their synonymous
-# phrasings. Caps highly polysemous words so a field stays readable.
+# Max glosses kept per sense (synonymous phrasings of one meaning). Caps a
+# pathologically long sense; the plain-string fallback path also uses it as a
+# total cap across the lone synthesised sense.
 MAX_GLOSSES = 8
+
+# Max senses kept per headword and max example sentences kept per sense. Bound
+# the stored structure so a definition field stays renderable; the add-on's
+# formatter shows one example per sense, so one is all that's stored.
+MAX_SENSES = 12
+MAX_EXAMPLES_PER_SENSE = 1
 
 # jitendex priority floor for the meanings catalog (see _drop_low_score). score
 # is jitendex's own per-entry priority: ~200/99 = common primary sense, 0 = the
@@ -33,7 +40,7 @@ _WS_RE = re.compile(r"\s+")
 class MeaningRow(NamedTuple):
     lemma: str
     reading: str
-    glosses: list[str]
+    senses: list[dict]  # [{"pos": [str], "glosses": [str], "examples": [{"ja","en"}]}]
     score: int
     seq: int
     jlpt: int | None
@@ -65,7 +72,8 @@ def _jlpt_from_tags(tags: str) -> int | None:
 
 
 def _plain_text(node: Any) -> str:
-    """Plain text of a structured-content node, dropping rt (furigana) and links."""
+    """Plain text of a structured-content node, dropping rt (furigana), links and
+    attribution footnotes (the ``[1]`` example-source markers)."""
     if node is None:
         return ""
     if isinstance(node, str):
@@ -76,6 +84,9 @@ def _plain_text(node: Any) -> str:
         if node.get("type") == "image":
             return ""
         if node.get("tag") in ("rt", "a"):
+            return ""
+        data = node.get("data")
+        if isinstance(data, dict) and data.get("content") == "attribution-footnote":
             return ""
         if isinstance(node.get("text"), str):
             return node["text"]
@@ -110,9 +121,111 @@ def _collect_glosses(node: Any, out: list[str]) -> None:
             _collect_glosses(node["content"], out)
 
 
-def _parse_glossary(glossary: Any) -> list[str]:
+def _data_role(node: Any) -> str | None:
+    """The jitendex structured-content role tag (`data.content`) of a node."""
+    data = node.get("data") if isinstance(node, dict) else None
+    return data.get("content") if isinstance(data, dict) else None
+
+
+def _collect_pos(node: Any, out: list[str]) -> None:
+    """Collect part-of-speech labels (`part-of-speech-info` spans) in a subtree.
+
+    POS spans live at the `sense-group` level (not inside `sense` blocks), so a
+    plain subtree walk over one sense-group picks up only that group's tags.
+    """
+    if isinstance(node, list):
+        for n in node:
+            _collect_pos(n, out)
+    elif isinstance(node, dict):
+        if _data_role(node) == "part-of-speech-info":
+            text = _clean_text(_plain_text(node.get("content")))
+            if text and text not in out:
+                out.append(text)
+            return
+        if "content" in node:
+            _collect_pos(node["content"], out)
+
+
+def _collect_examples(node: Any, out: list[dict[str, str]]) -> None:
+    """Collect example sentences (`example-sentence` blocks) in a sense subtree.
+
+    Each block carries a Japanese line (`example-sentence-a`) and an English
+    translation (`example-sentence-b`); ruby is dropped, leaving plain text.
+    """
+    if isinstance(node, list):
+        for n in node:
+            _collect_examples(n, out)
+        return
+    if not isinstance(node, dict):
+        return
+    if _data_role(node) == "example-sentence":
+        ja = en = ""
+        content = node.get("content")
+        for child in content if isinstance(content, list) else [content]:
+            if not isinstance(child, dict):
+                continue
+            role = _data_role(child)
+            if role == "example-sentence-a":
+                ja = _clean_text(_plain_text(child.get("content")))
+            elif role == "example-sentence-b":
+                en = _clean_text(_plain_text(child.get("content")))
+        if ja and len(out) < MAX_EXAMPLES_PER_SENSE:
+            out.append({"ja": ja, "en": en})
+        return
+    if "content" in node:
+        _collect_examples(node["content"], out)
+
+
+def _collect_senses(node: Any, pos: list[str], out: list[dict]) -> None:
+    """Walk the structured content into a flat list of senses.
+
+    A `sense-group` carries the POS shared by its senses; each `sense` block
+    becomes one entry of ``out`` (its synonymous glosses + up to N examples),
+    inheriting the enclosing group's POS.
+    """
+    if isinstance(node, list):
+        for n in node:
+            _collect_senses(n, pos, out)
+        return
+    if not isinstance(node, dict):
+        return
+    role = _data_role(node)
+    if role == "sense-group":
+        group_pos: list[str] = []
+        _collect_pos(node, group_pos)
+        _collect_senses(node.get("content"), group_pos, out)
+        return
+    if role == "sense":
+        glosses: list[str] = []
+        _collect_glosses(node, glosses)
+        if glosses:
+            examples: list[dict[str, str]] = []
+            _collect_examples(node, examples)
+            out.append({"pos": list(pos), "glosses": glosses[:MAX_GLOSSES], "examples": examples})
+        return
+    if "content" in node:
+        _collect_senses(node["content"], pos, out)
+
+
+def _parse_senses(glossary: Any) -> list[dict]:
+    """Parse a jitendex glossary into a list of senses (best-effort).
+
+    Prefers the structured `sense-group`/`sense` shape; falls back to a single
+    synthesised sense from any plain-string / loosely-structured glossary items
+    (no POS, no examples), so simple entries still produce one usable sense.
+    """
     if not isinstance(glossary, list):
         return []
+    senses: list[dict] = []
+    _collect_senses(glossary, [], senses)
+    if senses:
+        return senses[:MAX_SENSES]
+    flat = _parse_flat_glosses(glossary)
+    return [{"pos": [], "glosses": flat, "examples": []}] if flat else []
+
+
+def _parse_flat_glosses(glossary: list) -> list[str]:
+    """Flatten plain-string / unstructured glossary items (fallback path)."""
     out: list[str] = []
     for item in glossary:
         if len(out) >= MAX_GLOSSES:
@@ -175,14 +288,14 @@ def parse_jitendex(zip_path: Path) -> Iterator[MeaningRow]:
                 expression = row[0]
                 if not expression:
                     continue
-                glosses = _parse_glossary(row[5])
-                if not glosses:
+                senses = _parse_senses(row[5])
+                if not senses:
                     continue
                 rows.append(
                     MeaningRow(
                         lemma=expression,
                         reading=row[1] or "",
-                        glosses=glosses,
+                        senses=senses,
                         score=row[4] if isinstance(row[4], int) else 0,
                         seq=row[6] if isinstance(row[6], int) else 0,
                         jlpt=_jlpt_from_tags(row[7] if isinstance(row[7], str) else ""),
