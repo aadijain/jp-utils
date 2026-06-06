@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Read-only dictionary cache location. Empty -> dicts.paths.default_cache_path().
     dict_cache_path: str = ""
 
+    # Personal vocab store (vocab.db) location. Empty -> vocab.default_db_path().
+    vocab_db_path: str = ""
+
     # Base URL of the Yomitan local-audio-yomichan server (`../local-audio-yomichan`,
     # standalone WO_ANKI=1). The backend proxies it for word audio; the add-on never
     # calls it directly. Typically co-hosted with the backend, so localhost by default.

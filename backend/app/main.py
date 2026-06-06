@@ -19,12 +19,17 @@ from app.dicts import DictCache
 from app.errors import register_exception_handlers
 from app.text.audio import AudioProxy
 from app.text.tokenizer import Tokenizer
+from app.vocab import VocabStore
 
 logger = logging.getLogger("jp_utils.backend")
 
 
 def _cache_path(settings: Settings) -> Path | None:
     return Path(settings.dict_cache_path) if settings.dict_cache_path else None
+
+
+def _vocab_path(settings: Settings) -> Path | None:
+    return Path(settings.vocab_db_path) if settings.vocab_db_path else None
 
 
 def _build_tokenizer() -> Tokenizer | None:
@@ -42,12 +47,15 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.dict_cache = DictCache.open(_cache_path(settings))
     app.state.tokenizer = _build_tokenizer()
+    app.state.vocab_store = VocabStore.open(_vocab_path(settings))
     app.state.audio_proxy = AudioProxy(settings.audio_url)
     try:
         yield
     finally:
         if app.state.dict_cache is not None:
             app.state.dict_cache.close()
+        if app.state.vocab_store is not None:
+            app.state.vocab_store.close()
         if app.state.audio_proxy is not None:
             app.state.audio_proxy.close()
 

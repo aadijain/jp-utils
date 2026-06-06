@@ -215,6 +215,15 @@ def vocab_store(tmp_path: Path):
 
 
 @pytest.fixture
+def vocab_client(settings: Settings, vocab_store) -> TestClient:
+    """Client with the vocab store injected on app.state (no lifespan needed)."""
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.state.vocab_store = vocab_store
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
 def text_client_with_dicts(settings: Settings, tokenizer, built_cache) -> TestClient:
     """Client with both the tokenizer and the (synthetic) dict cache on app.state."""
     from app.dicts import DictCache
