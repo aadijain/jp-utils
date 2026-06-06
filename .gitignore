@@ -20,4 +20,7 @@ __pycache__/
 
 # Local data / build artifacts
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 backend/data/dict/
