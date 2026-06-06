@@ -37,13 +37,32 @@ def test_download_target_uses_shared_dir_without_env(monkeypatch) -> None:
 # ── Parsers ──────────────────────────────────────────────────────────────────
 
 
-def test_parse_jitendex_extracts_glosses(synthetic_dicts: Path) -> None:
+def test_parse_jitendex_extracts_senses(synthetic_dicts: Path) -> None:
     rows = {r.lemma: r for r in parse_jitendex(synthetic_dicts / "jitendex.zip")}
 
     assert rows["食べる"].reading == "たべる"
-    assert rows["食べる"].glosses == ["to eat", "to live on", "to subsist"]  # all phrasings
     assert rows["食べる"].jlpt == 5
-    assert rows["水"].glosses == ["water"]
+    senses = rows["食べる"].senses
+    # two senses, sharing the group's POS; every phrasing of each sense kept.
+    assert [s["glosses"] for s in senses] == [["to eat"], ["to live on", "to subsist"]]
+    assert all(s["pos"] == ["1-dan", "transitive"] for s in senses)
+    # example on sense 1: plain `ja` keeps ruby stripped; `segments` preserve the
+    # source furigana + the example-keyword highlight (食べる) as kw=True.
+    assert senses[0]["examples"] == [
+        {
+            "ja": "寿司を食べる",
+            "en": "to eat sushi",
+            "segments": [
+                {"text": "寿司", "reading": "すし", "kw": False},
+                {"text": "を", "reading": "", "kw": False},
+                {"text": "食", "reading": "た", "kw": True},
+                {"text": "べる", "reading": "", "kw": True},
+            ],
+        }
+    ]
+    assert senses[1]["examples"] == []
+    # plain-string glossary falls back to one POS-less, example-less sense.
+    assert rows["水"].senses == [{"pos": [], "glosses": ["water"], "examples": []}]
 
 
 def test_parse_jitendex_drops_low_score_entries(synthetic_dicts: Path) -> None:
@@ -87,7 +106,10 @@ def test_lookup_meaning(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
     entries = cache.lookup_meaning("食べる")
-    assert entries[0]["glosses"] == ["to eat", "to live on", "to subsist"]
+    assert [s["glosses"] for s in entries[0]["senses"]] == [
+        ["to eat"],
+        ["to live on", "to subsist"],
+    ]
     assert entries[0]["reading"] == "たべる"
     assert cache.lookup_meaning("食べる", reading="ちがう") == []
 
