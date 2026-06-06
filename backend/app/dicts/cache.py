@@ -28,13 +28,13 @@ from app.text.convert import kata_to_hira
 
 logger = logging.getLogger("jp_utils.backend")
 
-SCHEMA_VERSION = 2  # v2: furigana keeps full segmentation (kana chunks with rt="")
+SCHEMA_VERSION = 3  # v3: per-sense structure; examples carry furigana+keyword segments
 
 _SCHEMA = """
 CREATE TABLE meanings (
     lemma   TEXT NOT NULL,
     reading TEXT NOT NULL,
-    glosses TEXT NOT NULL,
+    senses  TEXT NOT NULL,
     score   INTEGER NOT NULL,
     seq     INTEGER NOT NULL,
     jlpt    INTEGER
@@ -80,7 +80,7 @@ class DictReport:
 
 def _insert_meanings(conn: sqlite3.Connection, path: Path) -> int:
     rows = (
-        (r.lemma, r.reading, json.dumps(r.glosses, ensure_ascii=False), r.score, r.seq, r.jlpt)
+        (r.lemma, r.reading, json.dumps(r.senses, ensure_ascii=False), r.score, r.seq, r.jlpt)
         for r in parse_jitendex(path)
     )
     return _executemany(conn, "INSERT INTO meanings VALUES (?, ?, ?, ?, ?, ?)", rows)
@@ -245,13 +245,13 @@ class DictCache:
         conn = self._conn()
         if reading is None:
             cur = conn.execute(
-                "SELECT reading, glosses, score, seq, jlpt FROM meanings "
+                "SELECT reading, senses, score, seq, jlpt FROM meanings "
                 "WHERE lemma = ? ORDER BY score DESC, seq ASC",
                 (lemma,),
             )
         else:
             cur = conn.execute(
-                "SELECT reading, glosses, score, seq, jlpt FROM meanings "
+                "SELECT reading, senses, score, seq, jlpt FROM meanings "
                 "WHERE lemma = ? AND reading = ? ORDER BY score DESC, seq ASC",
                 (lemma, reading),
             )
@@ -259,7 +259,7 @@ class DictCache:
             {
                 "lemma": lemma,
                 "reading": row["reading"],
-                "glosses": json.loads(row["glosses"]),
+                "senses": json.loads(row["senses"]),
                 "score": row["score"],
                 "seq": row["seq"],
                 "jlpt": row["jlpt"],
