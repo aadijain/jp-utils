@@ -17,6 +17,26 @@ def test_record_and_current_keys(vocab_store: VocabStore) -> None:
     assert vocab_store.current_keys() == {("食べる", "たべる"), ("水", "みず")}
 
 
+def test_current_lemmas_ignores_reading(vocab_store: VocabStore) -> None:
+    # Two readings of one lemma collapse to a single lemma; reading is dropped.
+    vocab_store.record(
+        [
+            RecordEntry(lemma="人", reading="ひと"),
+            RecordEntry(lemma="人", reading="じん"),
+            RecordEntry(lemma="水", reading="みず"),
+        ]
+    )
+    assert vocab_store.current_lemmas() == {"人", "水"}
+
+
+def test_current_lemmas_excludes_removed(vocab_store: VocabStore) -> None:
+    vocab_store.record([RecordEntry(lemma="水", reading="みず")])
+    vocab_store.record(
+        [RecordEntry(lemma="水", reading="みず", action=VocabAction.REMOVED)], force=True
+    )
+    assert vocab_store.current_lemmas() == set()
+
+
 def test_seen_counts_as_known(vocab_store: VocabStore) -> None:
     # A `seen` word (sentence reviewed, no word card yet) is known, not unknown.
     vocab_store.record(
