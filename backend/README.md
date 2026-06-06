@@ -83,6 +83,7 @@ Settings come from `JP_UTILS_*` environment variables (or a `backend/.env` file)
 | `JP_UTILS_API_TOKEN` | Bearer token required on every `/v1` route |
 | `JP_UTILS_AUDIO_URL` | Base URL of the local-audio-yomichan server the audio proxy hits (default `http://127.0.0.1:5050`) |
 | `JP_UTILS_DICT_CACHE_PATH` | Override the dictionary cache location |
+| `JP_UTILS_VOCAB_DB_PATH` | Override the vocab store (`vocab.db`) location |
 | `JITENDEX_PATH` / `JPDB_FREQ_PATH` / `JMDICT_FURIGANA_PATH` | Override individual dictionary file locations |
 
 ## Layout
@@ -97,6 +98,7 @@ app/
     health.py      public /health
     v1/            text.py, vocab.py, mining.py routers (bearer-guarded)
   text/            tokenizer, furigana, convert, meaning, frequency, normalize, words, audio, spacing
+  vocab/           store.py (the event ledger)
   dicts/           parsers + read-only SQLite cache over the three dictionaries
 tests/             pytest suite (FastAPI TestClient)
 ```
