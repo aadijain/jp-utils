@@ -1,8 +1,9 @@
 # jp-utils backend
 
-A [FastAPI](https://fastapi.tiangolo.com/) service with a single layer:
+A [FastAPI](https://fastapi.tiangolo.com/) service with two layers:
 
 - a stateless **text** service (`/v1/text/*`) - pure functions over read-only reference data: tokenization, furigana, readings, meanings, frequency, conversions. No user state; reusable by any tool.
+- a stateful **vocab** store (`/v1/vocab/*`) - your personal known-words knowledge base, keyed on word + reading (never Anki card ids), backed by a portable SQLite event ledger.
 
 The backend never touches Anki's database; all Anki I/O lives in the [add-on](../addon/). Slices share only the [`shared/`](../shared/) contract.
 
@@ -22,6 +23,19 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
+
+## Vocab store (`/v1/vocab/*`)
+
+Your personal known-words list. It is your data and stays local: a single append-only `events` table (keyed on lemma + reading), projected to the latest status per word, with JSON/CSV export.
+
+| Endpoint | What it does |
+|---|---|
+| `POST /words` | Append a batch of word events (manual entry, or auto-derived from your Anki cards) |
+| `POST /filter-by-status` | Given a batch of words, return those whose status is in a given set (default: the ones you don't know yet) |
+| `GET /status` | How many words are recorded, plus a monotonic store version |
+| `GET /export?format=json\|csv` | Export your known-words list |
+
+The store is portable plain SQLite and is designed to be extractable into its own service later.
 
 ## Quick start
 
