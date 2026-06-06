@@ -18,6 +18,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /convert` | hiragana/katakana, romaji, and full-width/half-width conversion |
 | `POST /meaning` | Dictionary definitions (Jitendex) |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
+| `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key) |
 
 ## Quick start
 

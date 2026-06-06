@@ -151,3 +151,22 @@ class FrequencyRequest:
 @dataclass
 class FrequencyResponse:
     results: list[FrequencyResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
+class NormalizeResult:
+    surface: str  # echoes the input
+    lemma: str  # dictionary form (deinflected); the canonical key together with `reading`
+    reading: str  # hiragana reading of the lemma; "" if unavailable
+    normalized: str  # Sudachi normalized form (variant unification, e.g. する -> 為る)
+
+
+@dataclass
+class NormalizeRequest:
+    surfaces: list[str]  # batch-first
+    mode: SplitMode = SplitMode.C
+
+
+@dataclass
+class NormalizeResponse:
+    results: list[NormalizeResult] = field(default_factory=list)  # aligned with request.surfaces

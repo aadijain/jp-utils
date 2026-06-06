@@ -13,6 +13,7 @@ from app.text.convert import convert
 from app.text.frequency import lookup_frequency
 from app.text.furigana import annotate
 from app.text.meaning import lookup_meaning
+from app.text.normalize import normalize
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from shared.text import (
@@ -25,6 +26,8 @@ from shared.text import (
     FuriganaText,
     MeaningRequest,
     MeaningResponse,
+    NormalizeRequest,
+    NormalizeResponse,
     SpacingRequest,
     SpacingResponse,
     TokenizedText,
@@ -113,3 +116,13 @@ def frequency(
 ) -> FrequencyResponse:
     """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
     return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
+
+
+@router.post("/normalize")
+def normalize_text(
+    req: NormalizeRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
+) -> NormalizeResponse:
+    """Deinflect each surface to its canonical lemma + reading. Aligned with `req.surfaces`."""
+    results = [normalize(tokenizer, surface, req.mode) for surface in req.surfaces]
+    return NormalizeResponse(results=results)
