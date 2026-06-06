@@ -17,6 +17,7 @@ No third-party imports may appear here. That constraint is what lets one definit
 |---|---|
 | `text.py` | tokenize, space, furigana, convert, meaning, frequency, normalize, audio (`/v1/text/*`) |
 | `vocab.py` | record words, filter-by-status, status, export; the `VocabWord` / `WordStatus` / `VocabAction` types (`/v1/vocab/*`) |
+| `mining.py` | n+1 sort: `MiningSentence`, `SentenceScore`, `Nplus` (`/v1/mining/*`) |
 | `health.py` | `HealthResponse` / `DictStatus` for the public `/health` endpoint |
 | `errors.py` | `ErrorResponse` / `ErrorBody` - the one error shape every failure is serialized into |
 
