@@ -179,6 +179,33 @@ class FrequencyResponse:
 
 
 @dataclass
+class AudioQuery:
+    term: str  # the word to look up audio for
+    reading: str | None = None  # optional reading to disambiguate homographs
+
+
+@dataclass
+class AudioResult:
+    term: str
+    reading: str | None
+    source: str | None = None  # name of the chosen audio source; None if no audio found
+    filename: str | None = None  # suggested media filename (with extension); None if not found
+    content_type: str | None = None  # MIME type of the audio bytes
+    data: str | None = None  # base64-encoded audio bytes; None if not found
+
+
+@dataclass
+class AudioRequest:
+    queries: list[AudioQuery]  # batch-first
+    sources: list[str] = field(default_factory=list)  # optional source-preference passthrough
+
+
+@dataclass
+class AudioResponse:
+    results: list[AudioResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
 class NormalizeResult:
     surface: str  # echoes the input
     lemma: str  # dictionary form (deinflected); the canonical key together with `reading`
