@@ -124,5 +124,6 @@ app/
   vocab/           store.py (the event ledger)
   mining/          ordering.py (pure greedy n+1) + sort.py (text + vocab composition)
   dicts/           parsers + read-only SQLite cache over the three dictionaries
+  cache/           tokenization cache (derived, disposable)
 tests/             pytest suite (FastAPI TestClient)
 ```
