@@ -6,8 +6,14 @@ app.state - never constructed per request.
 """
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
+from app.api.v1.deps import (
+    get_audio_proxy,
+    get_dict_cache,
+    get_tokenizer,
+    require_dict_cache,
+)
 from app.dicts import DictCache
 from app.errors import APIError
 from app.text.audio import AudioProxy
@@ -40,33 +46,6 @@ from shared.text import (
 )
 
 router = APIRouter(prefix="/text", tags=["text"])
-
-
-def get_tokenizer(request: Request) -> Tokenizer:
-    tokenizer: Tokenizer | None = getattr(request.app.state, "tokenizer", None)
-    if tokenizer is None:
-        raise APIError(503, "tokenizer_unavailable", "Tokenizer is not available")
-    return tokenizer
-
-
-def get_dict_cache(request: Request) -> DictCache | None:
-    """The dict cache is optional: furigana degrades to alignment without it."""
-    return getattr(request.app.state, "dict_cache", None)
-
-
-def require_dict_cache(request: Request) -> DictCache:
-    """For endpoints that can't work without the dict cache (meaning, frequency)."""
-    cache = getattr(request.app.state, "dict_cache", None)
-    if cache is None:
-        raise APIError(503, "dictionary_unavailable", "Dictionary cache is not built")
-    return cache
-
-
-def get_audio_proxy(request: Request) -> AudioProxy:
-    proxy: AudioProxy | None = getattr(request.app.state, "audio_proxy", None)
-    if proxy is None:
-        raise APIError(503, "audio_unavailable", "Audio proxy is not configured")
-    return proxy
 
 
 @router.post("/tokenize")
