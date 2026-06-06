@@ -17,7 +17,7 @@ The repo is a single [uv](https://docs.astral.sh/uv/) workspace (one `.venv` and
 
 ## What it does
 
-The **backend** exposes a batch-first, bearer-authenticated HTTP API: tokenization, word spacing, furigana, kana/romaji conversion, dictionary meanings, frequency ranks, deinflection, content-word extraction, and pronunciation audio. Alongside it, the **vocab store** records the words you know (keyed on word + reading, never card ids). See [backend/README.md](backend/README.md) for the full endpoint list.
+The **backend** exposes a batch-first, bearer-authenticated HTTP API: tokenization, word spacing, furigana, kana/romaji conversion, dictionary meanings, frequency ranks, deinflection, content-word extraction, and pronunciation audio. Alongside it, the **vocab store** records the words you know (keyed on word + reading, never card ids). The **mining** layer composes the text service with your known-words list - the home for features that need both text processing and your vocabulary state; today it provides n+1 sentence ordering (order a batch of sentences so each introduces as few new words as possible). See [backend/README.md](backend/README.md) for the full endpoint list.
 
 ## Quick start
 

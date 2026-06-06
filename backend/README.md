@@ -1,9 +1,10 @@
 # jp-utils backend
 
-A [FastAPI](https://fastapi.tiangolo.com/) service with two layers:
+A [FastAPI](https://fastapi.tiangolo.com/) service with three layers:
 
 - a stateless **text** service (`/v1/text/*`) - pure functions over read-only reference data: tokenization, furigana, readings, meanings, frequency, conversions. No user state; reusable by any tool.
 - a stateful **vocab** store (`/v1/vocab/*`) - your personal known-words knowledge base, keyed on word + reading (never Anki card ids), backed by a portable SQLite event ledger.
+- a **mining** layer (`/v1/mining/*`) - the only layer that composes the text service with the vocab store; the home for features that need both text processing and your known-words list. Today it provides n+1 sentence ordering.
 
 The backend never touches Anki's database; all Anki I/O lives in the [add-on](../addon/). Slices share only the [`shared/`](../shared/) contract.
 
@@ -36,6 +37,14 @@ Your personal known-words list. It is your data and stays local: a single append
 | `GET /export?format=json\|csv` | Export your known-words list |
 
 The store is portable plain SQLite and is designed to be extractable into its own service later.
+
+## Mining layer (`/v1/mining/*`)
+
+| Endpoint | What it does |
+|---|---|
+| `POST /nplus1sort` | Given a batch of sentences, return a study order that introduces as few new words as possible at each step (greedy n+1), scored against your known-words list |
+
+The add-on uses this to order a mining deck's new-card queue. More mining endpoints can join this layer as the workflow grows.
 
 ## Quick start
 
