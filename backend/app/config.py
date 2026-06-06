@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # Read-only dictionary cache location. Empty -> dicts.paths.default_cache_path().
     dict_cache_path: str = ""
 
+    # Base URL of the Yomitan local-audio-yomichan server (`../local-audio-yomichan`,
+    # standalone WO_ANKI=1). The backend proxies it for word audio; the add-on never
+    # calls it directly. Typically co-hosted with the backend, so localhost by default.
+    audio_url: str = "http://127.0.0.1:5050"
+
 
 @lru_cache
 def get_settings() -> Settings:

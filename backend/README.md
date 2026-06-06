@@ -19,6 +19,9 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /meaning` | Dictionary definitions, per-sense (Jitendex); optional reading filter |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
 | `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key) |
+| `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
+
+The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
 
 ## Quick start
 
@@ -78,6 +81,7 @@ Settings come from `JP_UTILS_*` environment variables (or a `backend/.env` file)
 | Variable | What it does |
 |---|---|
 | `JP_UTILS_API_TOKEN` | Bearer token required on every `/v1` route |
+| `JP_UTILS_AUDIO_URL` | Base URL of the local-audio-yomichan server the audio proxy hits (default `http://127.0.0.1:5050`) |
 | `JP_UTILS_DICT_CACHE_PATH` | Override the dictionary cache location |
 | `JITENDEX_PATH` / `JPDB_FREQ_PATH` / `JMDICT_FURIGANA_PATH` | Override individual dictionary file locations |
 

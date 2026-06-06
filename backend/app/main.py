@@ -17,6 +17,7 @@ from app.api.v1 import router as v1_router
 from app.config import Settings, get_settings
 from app.dicts import DictCache
 from app.errors import register_exception_handlers
+from app.text.audio import AudioProxy
 from app.text.tokenizer import Tokenizer
 
 logger = logging.getLogger("jp_utils.backend")
@@ -41,11 +42,14 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.dict_cache = DictCache.open(_cache_path(settings))
     app.state.tokenizer = _build_tokenizer()
+    app.state.audio_proxy = AudioProxy(settings.audio_url)
     try:
         yield
     finally:
         if app.state.dict_cache is not None:
             app.state.dict_cache.close()
+        if app.state.audio_proxy is not None:
+            app.state.audio_proxy.close()
 
 
 def create_app() -> FastAPI:
