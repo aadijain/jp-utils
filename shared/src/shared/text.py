@@ -151,3 +151,28 @@ class FrequencyRequest:
 @dataclass
 class FrequencyResponse:
     results: list[FrequencyResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
+class NormalizeResult:
+    surface: str  # echoes the input
+    lemma: str  # dictionary form (deinflected); the canonical key together with `reading`
+    reading: str  # hiragana reading of the lemma; "" if unavailable
+    normalized: str  # Sudachi normalized form (variant unification, e.g. する -> 為る)
+    # True when the lemma derives from the WHOLE surface: every morpheme was
+    # either folded into it or dropped as conjugation. False means the tokenizer
+    # found no word to head the surface (punctuation, a bare auxiliary, a
+    # misparse), so the key is a guess - a consumer that writes durable state
+    # should skip it rather than store it.
+    covered: bool = True
+
+
+@dataclass
+class NormalizeRequest:
+    surfaces: list[str]  # batch-first
+    mode: SplitMode = SplitMode.C
+
+
+@dataclass
+class NormalizeResponse:
+    results: list[NormalizeResult] = field(default_factory=list)  # aligned with request.surfaces

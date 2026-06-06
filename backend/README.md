@@ -18,6 +18,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /convert` | hiragana/katakana, romaji, and full-width/half-width conversion |
 | `POST /meaning` | Dictionary definitions (Jitendex) |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
+| `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key). Words the tokenizer splits (compounds, prefixed words, noun+suffix) stay whole; `covered` reports whether the surface had a real word to head it |
 
 ## Quick start
 
@@ -91,7 +92,7 @@ app/
   api/
     health.py      public /health
     v1/            text.py, vocab.py, mining.py routers (bearer-guarded)
-  text/            tokenizer, furigana, convert, meaning, frequency, normalize, words, audio, spacing
+  text/            tokenizer, inflection, furigana, convert, meaning, frequency, normalize, words, audio, spacing
   dicts/           parsers + read-only SQLite cache over the three dictionaries
 tests/             pytest suite (FastAPI TestClient)
 ```
