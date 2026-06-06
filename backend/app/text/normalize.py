@@ -14,11 +14,15 @@ from app.text.tokenizer import Tokenizer
 from shared.text import NormalizeResult, SplitMode
 
 
-def _lemma_reading(tokenizer: Tokenizer, surface: str, surface_reading: str, lemma: str) -> str:
+def lemma_reading(tokenizer: Tokenizer, surface: str, surface_reading: str, lemma: str) -> str:
+    """The lemma's reading (katakana, as Sudachi emits) given its surface morpheme.
+
+    When the surface is already the dictionary form its reading is the lemma's; an
+    inflected surface carries only the inflected reading, so the dictionary form is
+    re-tokenized for the full one. Shared with `content_words_with_readings`.
+    """
     if lemma == surface:
         return surface_reading
-    # The head morpheme's reading is the inflected reading; re-tokenize the
-    # dictionary form to get the lemma's full reading.
     lemma_tokens = tokenizer.tokenize(lemma)
     if lemma_tokens:
         return "".join(token.reading for token in lemma_tokens)
@@ -31,7 +35,7 @@ def normalize(tokenizer: Tokenizer, surface: str, mode: SplitMode = SplitMode.C)
         return NormalizeResult(surface=surface, lemma="", reading="", normalized="")
     head = tokens[0]
     lemma = head.dictionary_form or head.surface
-    reading = _lemma_reading(tokenizer, head.surface, head.reading, lemma)
+    reading = lemma_reading(tokenizer, head.surface, head.reading, lemma)
     return NormalizeResult(
         surface=surface,
         lemma=lemma,
