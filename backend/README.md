@@ -113,6 +113,7 @@ app/
     v1/            text.py, vocab.py, mining.py routers (bearer-guarded)
   text/            tokenizer, furigana, convert, meaning, frequency, normalize, words, audio, spacing
   vocab/           store.py (the event ledger)
+  mining/          ordering.py (pure greedy n+1) + sort.py (text + vocab composition)
   dicts/           parsers + read-only SQLite cache over the three dictionaries
 tests/             pytest suite (FastAPI TestClient)
 ```
