@@ -34,7 +34,7 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 
 ## Running pipelines
 
-- **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck).
+- **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
 
 ## Development
 
@@ -49,6 +49,7 @@ The UI and entry modules import `aqt`/PyQt6 and are exercised inside Anki, not u
 ```
 src/jp_utils/
   __init__.py        guards all Anki wiring behind a successful aqt import
+  entry.py           setup(): Tools menu, Browser hook, auto-run lifecycle hooks
   client.py          BackendClient - the only network seam (urllib)
   config.py          AddonConfig: aliases, note-type field maps, pipelines
   ops/               the operations (see registry.py for the assembled list)
