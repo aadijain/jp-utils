@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends
 from app.api.v1.deps import (
     get_audio_proxy,
     get_dict_cache,
+    get_tokenization_cache,
     get_tokenizer,
     require_dict_cache,
 )
+from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.errors import APIError
 from app.text.audio import AudioProxy
@@ -24,9 +26,12 @@ from app.text.meaning import lookup_meaning
 from app.text.normalize import normalize
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
+from app.text.words import content_words_with_readings
 from shared.text import (
     AudioRequest,
     AudioResponse,
+    ContentWordsRequest,
+    ContentWordsResponse,
     ConvertRequest,
     ConvertResponse,
     FrequencyRequest,
@@ -106,6 +111,22 @@ def frequency(
 ) -> FrequencyResponse:
     """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
     return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
+
+
+@router.post("/content-words")
+def content_words(
+    req: ContentWordsRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
+    cache: TokenizationCache | None = Depends(get_tokenization_cache),
+) -> ContentWordsResponse:
+    """Extract each text's distinct content words (lemma + reading). Aligned with `req.texts`.
+
+    POS content-filter + contextual reading per word - the stateless half
+    generation composes with the vocab status filter. The tokenization cache is
+    consulted transparently inside the extractor (mode C only).
+    """
+    results = [content_words_with_readings(tokenizer, text, req.mode, cache) for text in req.texts]
+    return ContentWordsResponse(results=results)
 
 
 @router.post("/normalize")

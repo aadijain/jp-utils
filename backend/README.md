@@ -21,6 +21,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /meaning` | Dictionary definitions, per-sense (Jitendex); optional reading filter |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
 | `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key) |
+| `POST /content-words` | The vocabulary words of a sentence (content-word filtered, each with its in-context reading) - used to generate vocab cards |
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
@@ -32,7 +33,7 @@ Your personal known-words list. It is your data and stays local: a single append
 | Endpoint | What it does |
 |---|---|
 | `POST /words` | Append a batch of word events (manual entry, or auto-derived from your Anki cards) |
-| `POST /filter-by-status` | Given a batch of words, return those whose status is in a given set (default: the ones you don't know yet) |
+| `POST /filter-by-status` | Given a batch of words, return those whose status is in a given set (default: the ones you don't know yet); `match_lemma_only` collapses a lemma's status across readings |
 | `GET /status` | How many words are recorded, plus a monotonic store version |
 | `GET /export?format=json\|csv` | Export your known-words list |
 
