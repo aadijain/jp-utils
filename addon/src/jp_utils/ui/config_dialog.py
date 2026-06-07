@@ -15,13 +15,18 @@ note type: each alias offers the user's *actual* fields (pulled from
 import copy
 
 from aqt.qt import (
+    QAbstractItemView,
+    QCheckBox,
     QComboBox,
+    QCursor,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QMenu,
     QPushButton,
     Qt,
     QTableWidget,
@@ -30,12 +35,19 @@ from aqt.qt import (
     QVBoxLayout,
     QWidget,
 )
-from aqt.utils import tooltip
+from aqt.utils import showInfo, showWarning, tooltip
 
 from ..client import BackendClient, BackendError
-from ..config import ALIASES, AddonConfig, save
+from ..config import ALIASES, AddonConfig, Pipeline, PipelineStep, save
+from ..ops import ALL_OPERATIONS
+from .run import run_pipeline
 
 ALIAS_COLUMN_WIDTH = 220
+
+# Flags for a checkbox cell that still lets its row be selected.
+_CHECK_FLAGS = (
+    Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+)
 
 
 class _NoWheelComboBox(QComboBox):
@@ -58,13 +70,16 @@ class ConfigDialog(QDialog):
         # Pipelines are passed through unchanged here; the Pipelines tab edits them.
         self._pipelines = copy.deepcopy(config.pipelines)
         self._current_note_type: str | None = None
+        self._current_pipeline_index: int | None = None
+        self._loading = False  # suppress edit handlers during programmatic UI updates
 
         self.setWindowTitle("jp-utils Settings")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(640)
 
         tabs = QTabWidget()
         tabs.addTab(self._build_connection_tab(config), "Backend")
         tabs.addTab(self._build_fields_tab(), "Field mappings")
+        tabs.addTab(self._build_pipelines_tab(), "Pipelines")
 
         layout = QVBoxLayout(self)
         layout.addWidget(tabs)
@@ -225,6 +240,278 @@ class ConfigDialog(QDialog):
                 mapping[alias] = field
         return mapping
 
+    # ── Pipelines ────────────────────────────────────────────────────────────────
+    def _build_pipelines_tab(self) -> QWidget:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.addWidget(
+            QLabel(
+                "A pipeline runs an ordered list of operations over the notes in a "
+                "deck. A blank deck matches any deck of the note type."
+            )
+        )
+        row = QHBoxLayout()
+        row.addLayout(self._build_pipeline_list_panel())
+        row.addWidget(self._build_pipeline_editor(), stretch=1)
+        outer.addLayout(row)
+        self._refresh_list(select=0 if self._pipelines else -1)
+        return page
+
+    def _build_pipeline_list_panel(self) -> QVBoxLayout:
+        col = QVBoxLayout()
+        self._pipeline_list = QListWidget()
+        self._pipeline_list.setMaximumWidth(200)
+        self._pipeline_list.currentRowChanged.connect(self._on_list_row_changed)
+        col.addWidget(self._pipeline_list)
+        buttons = QHBoxLayout()
+        add = QPushButton("Add")
+        delete = QPushButton("Delete")
+        add.clicked.connect(self._add_pipeline)
+        delete.clicked.connect(self._delete_pipeline)
+        buttons.addWidget(add)
+        buttons.addWidget(delete)
+        col.addLayout(buttons)
+        return col
+
+    def _build_pipeline_editor(self) -> QWidget:
+        self._editor = QWidget()
+        box = QVBoxLayout(self._editor)
+
+        form = QFormLayout()
+        self._deck_combo = _NoWheelComboBox()
+        self._deck_combo.setEditable(True)
+        self._deck_combo.addItem("")
+        self._deck_combo.addItems(self._deck_names())
+        self._deck_combo.currentTextChanged.connect(self._on_target_edited)
+        form.addRow("Deck", self._deck_combo)
+
+        self._ptype_combo = _NoWheelComboBox()
+        self._ptype_combo.setEditable(True)
+        self._ptype_combo.addItem("")
+        self._ptype_combo.addItems(self._note_type_names())
+        self._ptype_combo.currentTextChanged.connect(self._on_target_edited)
+        form.addRow("Note type", self._ptype_combo)
+
+        self._enabled_check = QCheckBox("Enabled")
+        form.addRow("", self._enabled_check)
+        box.addLayout(form)
+
+        box.addWidget(QLabel("<b>Operations</b> (run top to bottom)"))
+        steps_row = QHBoxLayout()
+        self._steps_table = QTableWidget(0, 2)
+        self._steps_table.setHorizontalHeaderLabels(["Only if empty", "Operation"])
+        self._steps_table.verticalHeader().setVisible(False)
+        self._steps_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._steps_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._steps_table.horizontalHeader().setStretchLastSection(True)
+        self._steps_table.setColumnWidth(0, 100)
+        steps_row.addWidget(self._steps_table, stretch=1)
+        move_col = QVBoxLayout()
+        up = QPushButton("↑")
+        down = QPushButton("↓")
+        up.clicked.connect(lambda: self._move_step(-1))
+        down.clicked.connect(lambda: self._move_step(1))
+        move_col.addWidget(up)
+        move_col.addWidget(down)
+        move_col.addStretch(1)
+        steps_row.addLayout(move_col)
+        box.addLayout(steps_row)
+
+        op_buttons = QHBoxLayout()
+        add_op = QPushButton("Add operation")
+        add_op.clicked.connect(self._show_add_op_menu)
+        remove_op = QPushButton("Remove operation")
+        remove_op.clicked.connect(self._remove_operation)
+        op_buttons.addWidget(add_op)
+        op_buttons.addWidget(remove_op)
+        op_buttons.addStretch(1)
+        box.addLayout(op_buttons)
+
+        run_row = QHBoxLayout()
+        run = QPushButton("Run now")
+        run.clicked.connect(self._on_run_now)
+        run_row.addWidget(run)
+        run_row.addStretch(1)
+        box.addLayout(run_row)
+        return self._editor
+
+    def _deck_names(self) -> list[str]:
+        try:
+            return sorted(d.name for d in self.mw.col.decks.all_names_and_ids())
+        except Exception:  # noqa: BLE001 - no collection (shouldn't happen in Anki)
+            return []
+
+    def _default_note_type(self) -> str:
+        names = self._note_type_names()
+        return names[0] if names else ""
+
+    @staticmethod
+    def _pipeline_label(pipeline: Pipeline) -> str:
+        return f"{pipeline.deck or '(any deck)'} / {pipeline.note_type or '(no note type)'}"
+
+    def _refresh_list(self, select: int) -> None:
+        """Rebuild the pipeline list and load ``select`` into the editor."""
+        self._loading = True
+        self._pipeline_list.clear()
+        for pipeline in self._pipelines:
+            self._pipeline_list.addItem(self._pipeline_label(pipeline))
+        valid = 0 <= select < len(self._pipelines)
+        if valid:
+            self._pipeline_list.setCurrentRow(select)
+        self._loading = False
+        self._current_pipeline_index = select if valid else None
+        self._load_pipeline_editor()
+
+    def _on_list_row_changed(self, row: int) -> None:
+        if self._loading:
+            return
+        self._capture_pipeline_editor()  # persist the pipeline we're leaving
+        self._current_pipeline_index = row if 0 <= row < len(self._pipelines) else None
+        self._load_pipeline_editor()
+
+    def _load_pipeline_editor(self) -> None:
+        self._loading = True
+        idx = self._current_pipeline_index
+        self._editor.setEnabled(idx is not None)
+        if idx is not None:
+            pipeline = self._pipelines[idx]
+            self._deck_combo.setCurrentText(pipeline.deck)
+            self._ptype_combo.setCurrentText(pipeline.note_type)
+            self._enabled_check.setChecked(pipeline.enabled)
+            self._render_steps_table(pipeline)
+        else:
+            self._deck_combo.setCurrentText("")
+            self._ptype_combo.setCurrentText("")
+            self._enabled_check.setChecked(False)
+            self._steps_table.setRowCount(0)
+        self._loading = False
+
+    def _render_steps_table(self, pipeline: Pipeline) -> None:
+        table = self._steps_table
+        table.setRowCount(len(pipeline.steps))
+        for r, step in enumerate(pipeline.steps):
+            check = QTableWidgetItem()
+            check.setFlags(_CHECK_FLAGS)
+            check.setCheckState(
+                Qt.CheckState.Checked if step.only_if_empty else Qt.CheckState.Unchecked
+            )
+            table.setItem(r, 0, check)
+            op_item = QTableWidgetItem(step.op)  # shown verbatim
+            op_item.setData(Qt.ItemDataRole.UserRole, step.op)
+            op_item.setFlags(op_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(r, 1, op_item)
+
+    def _on_target_edited(self, *_) -> None:
+        """Live-update the list label as the deck / note type is edited."""
+        if self._loading or self._current_pipeline_index is None:
+            return
+        pipeline = self._pipelines[self._current_pipeline_index]
+        pipeline.deck = self._deck_combo.currentText().strip()
+        pipeline.note_type = self._ptype_combo.currentText().strip()
+        self._pipeline_list.item(self._current_pipeline_index).setText(
+            self._pipeline_label(pipeline)
+        )
+
+    def _add_pipeline(self) -> None:
+        self._capture_pipeline_editor()
+        self._pipelines.append(Pipeline(deck="", note_type=self._default_note_type()))
+        self._refresh_list(select=len(self._pipelines) - 1)
+
+    def _delete_pipeline(self) -> None:
+        idx = self._current_pipeline_index
+        if idx is None:
+            return
+        del self._pipelines[idx]
+        self._current_pipeline_index = None  # the deleted one is gone; don't capture it
+        self._refresh_list(select=min(idx, len(self._pipelines) - 1))
+
+    def _capture_steps(self) -> None:
+        """Rebuild the current pipeline's steps from the table (order + flags)."""
+        if self._current_pipeline_index is None:
+            return
+        pipeline = self._pipelines[self._current_pipeline_index]
+        prior = {step.op: step.params for step in pipeline.steps}  # preserve reserved params
+        steps: list[PipelineStep] = []
+        for row in range(self._steps_table.rowCount()):
+            op = self._steps_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+            only_if_empty = self._steps_table.item(row, 0).checkState() == Qt.CheckState.Checked
+            steps.append(PipelineStep(op, only_if_empty, dict(prior.get(op, {}))))
+        pipeline.steps = steps
+
+    def _capture_pipeline_editor(self) -> None:
+        idx = self._current_pipeline_index
+        if idx is None or not (0 <= idx < len(self._pipelines)):
+            return
+        pipeline = self._pipelines[idx]
+        pipeline.deck = self._deck_combo.currentText().strip()
+        pipeline.note_type = self._ptype_combo.currentText().strip()
+        pipeline.enabled = self._enabled_check.isChecked()
+        self._capture_steps()
+
+    def _move_step(self, delta: int) -> None:
+        idx = self._current_pipeline_index
+        if idx is None:
+            return
+        row = self._steps_table.currentRow()
+        target = row + delta
+        pipeline = self._pipelines[idx]
+        if row < 0 or not (0 <= target < len(pipeline.steps)):
+            return
+        self._capture_steps()
+        pipeline.steps[row], pipeline.steps[target] = pipeline.steps[target], pipeline.steps[row]
+        self._render_steps_table(pipeline)
+        self._steps_table.selectRow(target)
+
+    def _show_add_op_menu(self) -> None:
+        if self._current_pipeline_index is None:
+            tooltip("Select or add a pipeline first.", parent=self)
+            return
+        self._capture_steps()
+        used = {step.op for step in self._pipelines[self._current_pipeline_index].steps}
+        available = [op for op in ALL_OPERATIONS if op.key not in used]
+        menu = QMenu(self)
+        if not available:
+            menu.addAction("(no operations available)").setEnabled(False)
+        else:
+            for op in available:
+                menu.addAction(op.key, lambda checked=False, key=op.key: self._add_operation(key))
+        menu.exec(QCursor.pos())
+
+    def _add_operation(self, op_key: str) -> None:
+        idx = self._current_pipeline_index
+        if idx is None:
+            return
+        self._capture_steps()
+        self._pipelines[idx].steps.append(PipelineStep(op_key))
+        self._render_steps_table(self._pipelines[idx])
+
+    def _remove_operation(self) -> None:
+        idx = self._current_pipeline_index
+        if idx is None:
+            return
+        row = self._steps_table.currentRow()
+        if row < 0:
+            return
+        self._capture_steps()
+        del self._pipelines[idx].steps[row]
+        self._render_steps_table(self._pipelines[idx])
+
+    def _on_run_now(self) -> None:
+        if self._current_pipeline_index is None:
+            tooltip("Select a pipeline to run.", parent=self)
+            return
+        self._capture_pipeline_editor()
+        pipeline = self._pipelines[self._current_pipeline_index]
+        if not pipeline.deck:
+            showInfo("Set a deck for this pipeline to run it from here.", parent=self)
+            return
+        try:
+            note_ids = self.mw.col.find_notes(f'deck:"{pipeline.deck}"')
+        except Exception as exc:  # noqa: BLE001 - surface a bad deck name to the user
+            showWarning(f"Could not find notes: {exc}", parent=self)
+            return
+        run_pipeline(self.mw, note_ids, self, config=self.result_config())
+
     # ── Buttons / result ────────────────────────────────────────────────────────
     def _build_buttons(self) -> QDialogButtonBox:
         # Ok / Apply / Cancel, laid out in the platform's conventional order.
@@ -246,6 +533,7 @@ class ConfigDialog(QDialog):
     def result_config(self) -> AddonConfig:
         """The edited config. Call after ``exec()`` returns accepted."""
         self._capture_tables()
+        self._capture_pipeline_editor()
         return AddonConfig(
             server_url=self._url_edit.text().strip() or AddonConfig().server_url,
             token=self._token_edit.text().strip(),
