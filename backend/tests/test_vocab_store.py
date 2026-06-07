@@ -76,6 +76,38 @@ def test_filter_by_status_set(vocab_store: VocabStore) -> None:
     assert result.matched == [VocabWord("水", "みず"), VocabWord("木", "き")]
 
 
+def test_filter_lemma_only_ignores_reading_mismatch(vocab_store: VocabStore) -> None:
+    # 人 is learnt under the dict-preferred reading ひと; a query carrying Sudachi's
+    # じん would miss the exact (lemma, reading) key and wrongly look unknown.
+    vocab_store.record([RecordEntry(lemma="人", reading="ひと", action=VocabAction.LEARNT)])
+    query = [VocabWord("人", "じん")]
+
+    # Exact-key match: the reading mismatch surfaces 人 as unknown.
+    assert vocab_store.filter_by_status(query, [WordStatus.UNKNOWN]).matched == query
+    # Lemma-only match: 人 is recognized as learnt regardless of reading, so it is
+    # excluded from {unknown, seen} (generation never regenerates it).
+    matched = vocab_store.filter_by_status(
+        query, [WordStatus.UNKNOWN, WordStatus.SEEN], match_lemma_only=True
+    ).matched
+    assert matched == []
+
+
+def test_filter_lemma_only_collapses_to_most_advanced_reading(vocab_store: VocabStore) -> None:
+    # One reading seen, another learnt -> the lemma collapses to learnt (excluded).
+    vocab_store.record(
+        [
+            RecordEntry(
+                lemma="人", reading="ひと", action=VocabAction.SEEN, source=VocabSource.ANKI
+            ),
+            RecordEntry(lemma="人", reading="じん", action=VocabAction.LEARNT),
+        ]
+    )
+    matched = vocab_store.filter_by_status(
+        [VocabWord("人", "")], [WordStatus.UNKNOWN, WordStatus.SEEN], match_lemma_only=True
+    ).matched
+    assert matched == []
+
+
 def test_ignored_and_blacklisted_count_as_not_new(vocab_store: VocabStore) -> None:
     # ignored particles / blacklisted words must NOT show up as unknown (kept out of n+1).
     vocab_store.record(

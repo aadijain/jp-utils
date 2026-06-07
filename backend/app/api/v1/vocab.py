@@ -50,9 +50,10 @@ def filter_by_status(
     """Return the subset of `req.words` whose status is in `req.statuses`.
 
     Defaults to unknown-only (the new-word hot path); generation passes
-    {unknown, seen}.
+    {unknown, seen} with `match_lemma_only` so a reading mismatch can't surface a
+    known word as unknown.
     """
-    return store.filter_by_status(req.words, req.statuses)
+    return store.filter_by_status(req.words, req.statuses, req.match_lemma_only)
 
 
 @router.get("/status")

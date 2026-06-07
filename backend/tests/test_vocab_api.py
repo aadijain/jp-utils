@@ -22,6 +22,29 @@ def test_words_and_filter_by_status_endpoints(
     assert resp.json()["matched"] == [{"lemma": "火", "reading": "ひ"}]
 
 
+def test_filter_by_status_lemma_only(
+    vocab_client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    vocab_client.post(
+        "/v1/vocab/words",
+        headers=auth_headers,
+        json={"entries": [{"lemma": "人", "reading": "ひと"}]},  # learnt by default
+    )
+    body = {"words": [{"lemma": "人", "reading": "じん"}], "statuses": ["unknown", "seen"]}
+
+    # Exact key: the reading mismatch surfaces 人 as unknown -> it stays.
+    resp = vocab_client.post("/v1/vocab/filter-by-status", headers=auth_headers, json=body)
+    assert resp.json()["matched"] == [{"lemma": "人", "reading": "じん"}]
+
+    # Lemma-only: 人 is recognized as learnt regardless of reading -> dropped.
+    resp = vocab_client.post(
+        "/v1/vocab/filter-by-status",
+        headers=auth_headers,
+        json={**body, "match_lemma_only": True},
+    )
+    assert resp.json()["matched"] == []
+
+
 def test_filter_by_status_set(vocab_client: TestClient, auth_headers: dict[str, str]) -> None:
     vocab_client.post(
         "/v1/vocab/words",

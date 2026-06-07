@@ -8,6 +8,8 @@ output onto these models.
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from shared.vocab import VocabWord
+
 
 class SplitMode(StrEnum):
     """SudachiPy split granularity: A (shortest) .. C (longest)."""
@@ -211,3 +213,16 @@ class NormalizeRequest:
 @dataclass
 class NormalizeResponse:
     results: list[NormalizeResult] = field(default_factory=list)  # aligned with request.surfaces
+
+
+@dataclass
+class ContentWordsRequest:
+    texts: list[str]  # batch-first: extract content words from many texts in one request
+    mode: SplitMode = SplitMode.C  # only C is cached (the tokenization-cache assumption)
+
+
+@dataclass
+class ContentWordsResponse:
+    # per input text, its distinct content words (lemma + context reading), in
+    # first-seen order; aligned with request.texts
+    results: list[list[VocabWord]] = field(default_factory=list)
