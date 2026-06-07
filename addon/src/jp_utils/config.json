@@ -1,4 +1,16 @@
 {
   "server_url": "http://localhost:8000",
-  "token": ""
+  "token": "",
+  "note_types": {
+    "Lapis": {
+      "word": "Expression",
+      "sentence": "Sentence",
+      "word-reading": "ExpressionReading",
+      "word-furigana": "ExpressionFurigana",
+      "sentence-furigana": "SentenceFurigana",
+      "definition": "MainDefinition",
+      "frequency": "FreqSort"
+    }
+  },
+  "pipelines": []
 }
