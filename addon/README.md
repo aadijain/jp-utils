@@ -29,6 +29,7 @@ The UI and entry modules import `aqt`/PyQt6 and are exercised inside Anki, not u
 ```
 src/jp_utils/
   __init__.py        guards all Anki wiring behind a successful aqt import
+  client.py          BackendClient - the only network seam (urllib)
   manifest.json / config.json / config.md   add-on packaging
 build.py             vendors shared/ and zips the .ankiaddon
 tests/               pytest suite
