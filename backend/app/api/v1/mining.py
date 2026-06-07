@@ -14,6 +14,7 @@ known set, and returns a greedy n+1 ordering as a per-card sequence number plus 
 
 from fastapi import APIRouter, Depends, Request
 
+from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.errors import APIError
 from app.mining import nplus1_sort
@@ -41,6 +42,11 @@ def get_vocab_store(request: Request) -> VocabStore:
 def get_dict_cache(request: Request) -> DictCache | None:
     """The dict cache is optional here: without it, frequency tie-breaks are skipped."""
     return getattr(request.app.state, "dict_cache", None)
+
+
+def get_tokenization_cache(request: Request) -> TokenizationCache | None:
+    """Optional: without it, every sentence is tokenized fresh (correctness unchanged)."""
+    return getattr(request.app.state, "tokenization_cache", None)
 
 
 @router.post("/nplus1sort")
