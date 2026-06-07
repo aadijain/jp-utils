@@ -16,7 +16,8 @@ JSON below). All settings here are also editable as raw JSON.
   dialog.
 - **pipelines** - ordered operations bound to a **(deck, note type)**. Each
   pipeline has a `deck` (blank = any deck of that note type), a `note_type`, an
-  `enabled` flag, and `steps` (each an operation `op` key + `only_if_empty`).
+  `enabled` flag, and `steps` (each an operation `op` key + a `params` map of that
+  operation's options, e.g. `only_if_empty` for field-writing operations).
   Pipelines run from the settings dialog's **Run now** button or the Browser
   **Notes -> jp-utils: Run pipeline** action. Empty by default - create your
   pipelines (e.g. one per deck) in the settings dialog.
