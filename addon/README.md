@@ -18,11 +18,19 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 ## Concepts
 
-**Aliases** are logical field names (`word`, `sentence`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
+**Aliases** are logical field names (`word`, `sentence`, `word-reading`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
 
 **Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
 
 **Pipelines** are an ordered list of operations bound to a **(deck, note type)** pair. A pipeline runs its operations against the matching notes, manually or automatically.
+
+## Operations
+
+| Operation | Label | Reads | Writes / effect |
+|---|---|---|---|
+| `word-reading` | Fetch word reading | `word` | `word-reading` |
+
+Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option.
 
 ## Configuration
 
