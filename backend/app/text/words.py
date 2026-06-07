@@ -11,12 +11,14 @@ The POS filter mirrors the known-words backfill,
 promoted here so the n+1 endpoint and any future feature share one definition of
 "a word that counts". Words are de-duplicated by lemma, order-preserving: a
 sentence's distinct content words are exactly what n+1 needs (its unknown set + a
-length proxy), and they are stable per sentence so the add-on caches them for
-incremental re-sorts. `content_words_with_readings` is the primary extractor (it
-carries the contextual reading generation needs); `content_words` is its
-lemma-only projection (n+1 matches lemma-only).
+length proxy), and they are stable per sentence so the result is memoized in a
+server-side `TokenizationCache` for incremental re-sorts. `content_words_with_readings`
+is the primary extractor (it carries the contextual reading generation needs)
+and the single place the cache is consulted; `content_words` is its lemma-only
+projection (n+1 matches lemma-only).
 """
 
+from app.cache import TokenizationCache, sentence_hash
 from app.text.convert import kata_to_hira
 from app.text.normalize import lemma_reading
 from app.text.tokenizer import Tokenizer
@@ -41,17 +43,8 @@ def is_content(token: Token) -> bool:
     return True
 
 
-def content_words_with_readings(
-    tokenizer: Tokenizer, text: str, mode: SplitMode = SplitMode.C
-) -> list[VocabWord]:
-    """The distinct content words of `text` (lemma + reading), in first-seen order.
-
-    The reading is the lemma's context-disambiguated reading (`normalize`'s
-    `lemma_reading`), folded to hiragana to match the store's convention. Dedup is
-    by lemma, so `content_words` is exactly this projected to its lemmas. n+1
-    ignores the reading; it rides along so generation gets a contextual reading
-    from the same tokenization (and the add-on caches it for incremental re-sorts).
-    """
+def _extract(tokenizer: Tokenizer, text: str, mode: SplitMode) -> list[VocabWord]:
+    """Tokenize `text` and keep its distinct content words (lemma + reading)."""
     words: list[VocabWord] = []
     seen: set[str] = set()
     for token in tokenizer.tokenize(text, mode):
@@ -66,6 +59,41 @@ def content_words_with_readings(
     return words
 
 
-def content_words(tokenizer: Tokenizer, text: str, mode: SplitMode = SplitMode.C) -> list[str]:
+def content_words_with_readings(
+    tokenizer: Tokenizer,
+    text: str,
+    mode: SplitMode = SplitMode.C,
+    cache: TokenizationCache | None = None,
+) -> list[VocabWord]:
+    """The distinct content words of `text` (lemma + reading), in first-seen order.
+
+    The reading is the lemma's context-disambiguated reading (`normalize`'s
+    `lemma_reading`), folded to hiragana to match the store's convention. Dedup is
+    by lemma, so `content_words` is exactly this projected to its lemmas. n+1
+    ignores the reading; it rides along so generation gets a contextual reading
+    from the same tokenization.
+
+    A `cache`, when given, memoizes the result by a content hash of `text` so repeat
+    extractions (the n+1 start-sweep, generation) skip Sudachi. This is the one
+    place caching is consulted, so every caller gets it for free.
+    Caching is limited to mode C (the cached assumption); other modes always extract.
+    """
+    if cache is not None and mode == SplitMode.C:
+        key = sentence_hash(text)
+        cached = cache.get_many([key]).get(key)
+        if cached is not None:
+            return cached
+        words = _extract(tokenizer, text, mode)
+        cache.put_many([(key, words)])
+        return words
+    return _extract(tokenizer, text, mode)
+
+
+def content_words(
+    tokenizer: Tokenizer,
+    text: str,
+    mode: SplitMode = SplitMode.C,
+    cache: TokenizationCache | None = None,
+) -> list[str]:
     """The distinct content-word lemmas of `text`, in first-seen order."""
-    return [w.lemma for w in content_words_with_readings(tokenizer, text, mode)]
+    return [w.lemma for w in content_words_with_readings(tokenizer, text, mode, cache)]
