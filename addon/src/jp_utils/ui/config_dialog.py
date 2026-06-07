@@ -13,6 +13,7 @@ note type: each alias offers the user's *actual* fields (pulled from
 """
 
 import copy
+import json
 
 from aqt.qt import (
     QAbstractItemView,
@@ -23,6 +24,7 @@ from aqt.qt import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -39,7 +41,8 @@ from aqt.utils import showInfo, showWarning, tooltip
 
 from ..client import BackendClient, BackendError
 from ..config import ALIASES, AddonConfig, Pipeline, PipelineStep, save
-from ..ops import ALL_OPERATIONS
+from ..ops import ALL_OPERATIONS, resolve_params
+from .params_dialog import ParamEditorDialog
 from .run import run_pipeline
 
 ALIAS_COLUMN_WIDTH = 220
@@ -293,12 +296,18 @@ class ConfigDialog(QDialog):
 
         box.addWidget(QLabel("<b>Operations</b> (run top to bottom)"))
         steps_row = QHBoxLayout()
-        self._steps_table = QTableWidget(0, 1)
-        self._steps_table.setHorizontalHeaderLabels(["Operation"])
+        self._steps_table = QTableWidget(0, 3)
+        self._steps_table.setHorizontalHeaderLabels(["Operation", "I/O", "Options"])
         self._steps_table.verticalHeader().setVisible(False)
         self._steps_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._steps_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._steps_table.horizontalHeader().setStretchLastSection(True)
+        header = self._steps_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)  # user-resizable
+        header.setStretchLastSection(True)  # Options fills the remainder
+        self._steps_table.setColumnWidth(0, 160)  # Operation
+        self._steps_table.setColumnWidth(1, 280)  # I/O (the long one)
+        self._steps_table.cellDoubleClicked.connect(lambda *_: self._edit_operation_params())
+        self._steps_table.itemSelectionChanged.connect(self._update_op_buttons)
         steps_row.addWidget(self._steps_table, stretch=1)
         move_col = QVBoxLayout()
         up = QPushButton("↑")
@@ -314,12 +323,16 @@ class ConfigDialog(QDialog):
         op_buttons = QHBoxLayout()
         add_op = QPushButton("Add operation")
         add_op.clicked.connect(self._show_add_op_menu)
-        remove_op = QPushButton("Remove operation")
-        remove_op.clicked.connect(self._remove_operation)
+        self._options_btn = QPushButton("Options…")
+        self._options_btn.clicked.connect(self._edit_operation_params)
+        self._remove_op_btn = QPushButton("Remove operation")
+        self._remove_op_btn.clicked.connect(self._remove_operation)
         op_buttons.addWidget(add_op)
-        op_buttons.addWidget(remove_op)
+        op_buttons.addWidget(self._options_btn)
+        op_buttons.addWidget(self._remove_op_btn)
         op_buttons.addStretch(1)
         box.addLayout(op_buttons)
+        self._update_op_buttons()
 
         run_row = QHBoxLayout()
         run = QPushButton("Run now")
@@ -378,16 +391,52 @@ class ConfigDialog(QDialog):
             self._ptype_combo.setCurrentText("")
             self._enabled_check.setChecked(False)
             self._steps_table.setRowCount(0)
+            self._update_op_buttons()
         self._loading = False
 
     def _render_steps_table(self, pipeline: Pipeline) -> None:
+        """One row per step, three columns: Operation | I/O | Options.
+
+        The stored identity (op key + per-row params) lives on the col-0 item, so
+        capture/move/remove - which key off ``item(row, 0)`` - keep working. The
+        I/O cell shows the op's alias signature; Options shows the step's effective
+        params as JSON. Both blank/raw-key fall back when the op is unregistered.
+        """
         table = self._steps_table
         table.setRowCount(len(pipeline.steps))
         for r, step in enumerate(pipeline.steps):
-            op_item = QTableWidgetItem(step.op)  # shown verbatim
-            op_item.setData(Qt.ItemDataRole.UserRole, step.op)
-            op_item.setFlags(op_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            op = self._op_by_key(step.op)
+
+            op_item = QTableWidgetItem(op.label if op else step.op)
+            op_item.setData(Qt.ItemDataRole.UserRole, step.op)  # stored identity
+            op_item.setData(Qt.ItemDataRole.UserRole + 1, dict(step.params))  # per-row params
+            self._set_readonly(op_item)
             table.setItem(r, 0, op_item)
+
+            io_text = op.io_display(resolve_params(op, step.params)) if op else ""
+            io_item = QTableWidgetItem(io_text)
+            self._set_readonly(io_item)
+            table.setItem(r, 1, io_item)
+
+            opts_item = QTableWidgetItem(self._format_options(op, step))
+            self._set_readonly(opts_item)
+            table.setItem(r, 2, opts_item)
+        self._update_op_buttons()
+
+    @staticmethod
+    def _set_readonly(item: QTableWidgetItem) -> None:
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+    @staticmethod
+    def _op_by_key(op_key: str):
+        return next((o for o in ALL_OPERATIONS if o.key == op_key), None)
+
+    @staticmethod
+    def _format_options(op, step: PipelineStep) -> str:
+        """The step's effective params (spec defaults overlaid with overrides) as JSON."""
+        params = {spec.key: spec.default for spec in op.params_spec} if op else {}
+        params.update(step.params)
+        return json.dumps(params, ensure_ascii=False) if params else ""
 
     def _on_target_edited(self, *_) -> None:
         """Live-update the list label as the deck / note type is edited."""
@@ -414,15 +463,21 @@ class ConfigDialog(QDialog):
         self._refresh_list(select=min(idx, len(self._pipelines) - 1))
 
     def _capture_steps(self) -> None:
-        """Rebuild the current pipeline's steps from the table (order + params)."""
+        """Rebuild the current pipeline's steps from the table (order + params).
+
+        Each row carries its own op key and params (UserRole / UserRole+1), so the
+        same operation may appear more than once with different params - the table
+        rows, not an op-keyed dict, are the source of truth.
+        """
         if self._current_pipeline_index is None:
             return
         pipeline = self._pipelines[self._current_pipeline_index]
-        prior = {step.op: step.params for step in pipeline.steps}  # preserve per-op params
         steps: list[PipelineStep] = []
         for row in range(self._steps_table.rowCount()):
-            op = self._steps_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-            steps.append(PipelineStep(op, dict(prior.get(op, {}))))
+            item = self._steps_table.item(row, 0)
+            op = item.data(Qt.ItemDataRole.UserRole)
+            params = item.data(Qt.ItemDataRole.UserRole + 1) or {}
+            steps.append(PipelineStep(op, dict(params)))
         pipeline.steps = steps
 
     def _capture_pipeline_editor(self) -> None:
@@ -454,14 +509,14 @@ class ConfigDialog(QDialog):
             tooltip("Select or add a pipeline first.", parent=self)
             return
         self._capture_steps()
-        used = {step.op for step in self._pipelines[self._current_pipeline_index].steps}
-        available = [op for op in ALL_OPERATIONS if op.key not in used]
         menu = QMenu(self)
-        if not available:
+        # Every operation is always offered; an op may be added more than once
+        # (each step keeps its own params), so there is no "already used" filter.
+        if not ALL_OPERATIONS:
             menu.addAction("(no operations available)").setEnabled(False)
         else:
-            for op in available:
-                menu.addAction(op.key, lambda checked=False, key=op.key: self._add_operation(key))
+            for op in ALL_OPERATIONS:
+                menu.addAction(op.label, lambda checked=False, key=op.key: self._add_operation(key))
         menu.exec(QCursor.pos())
 
     def _add_operation(self, op_key: str) -> None:
@@ -482,6 +537,30 @@ class ConfigDialog(QDialog):
         self._capture_steps()
         del self._pipelines[idx].steps[row]
         self._render_steps_table(self._pipelines[idx])
+
+    def _edit_operation_params(self) -> None:
+        idx = self._current_pipeline_index
+        if idx is None:
+            return
+        row = self._steps_table.currentRow()
+        if row < 0:
+            tooltip("Select an operation to edit its options.", parent=self)
+            return
+        self._capture_steps()
+        step = self._pipelines[idx].steps[row]
+        op = self._op_by_key(step.op)
+        specs = op.params_spec if op else ()
+        dialog = ParamEditorDialog(self, step.op, specs, step.params)
+        if dialog.exec() and specs:  # don't wipe params of an unregistered op (no specs)
+            step.params = dialog.values()
+            self._render_steps_table(self._pipelines[idx])  # refresh row label + stored params
+            self._steps_table.selectRow(row)
+
+    def _update_op_buttons(self) -> None:
+        """Enable the per-operation buttons only while a step row is selected."""
+        has_selection = self._steps_table.currentRow() >= 0
+        self._options_btn.setEnabled(has_selection)
+        self._remove_op_btn.setEnabled(has_selection)
 
     def _on_run_now(self) -> None:
         if self._current_pipeline_index is None:
