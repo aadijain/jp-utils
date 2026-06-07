@@ -17,5 +17,6 @@ except ImportError:
     # Not running inside Anki (tests, tooling): wire nothing.
     pass
 else:
-    # Host wiring is attached here once entry.setup exists (added with the UI).
-    pass
+    from .entry import setup
+
+    setup()
