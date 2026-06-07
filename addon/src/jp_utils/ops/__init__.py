@@ -14,8 +14,10 @@ from .base import (
     plan_operations,
     resolve_pipeline_steps,
 )
+from .registry import ALL_OPERATIONS
 
 __all__ = [
+    "ALL_OPERATIONS",
     "ConfiguredOp",
     "FieldUpdate",
     "NoteFields",

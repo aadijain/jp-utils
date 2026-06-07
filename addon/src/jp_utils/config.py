@@ -183,6 +183,23 @@ class AddonConfig:
         )
 
 
+def find_pipeline(pipelines: list[Pipeline], deck: str, note_type: str) -> Pipeline | None:
+    """The enabled pipeline that applies to a note in ``deck`` of ``note_type``.
+
+    An exact-deck pipeline wins; a blank-deck pipeline (matches any deck of that
+    note type) is the fallback. Returns ``None`` when nothing matches.
+    """
+    blank: Pipeline | None = None
+    for pipeline in pipelines:
+        if not pipeline.enabled or pipeline.note_type != note_type:
+            continue
+        if pipeline.deck == deck:
+            return pipeline
+        if pipeline.deck == "" and blank is None:
+            blank = pipeline
+    return blank
+
+
 def load(mw) -> AddonConfig:
     """Read the add-on config via Anki (falls back to defaults when unset)."""
     return AddonConfig.from_dict(mw.addonManager.getConfig(__name__))
