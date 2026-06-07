@@ -9,6 +9,7 @@ vocab module.
 
 from fastapi import Request
 
+from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.errors import APIError
 from app.text.audio import AudioProxy
@@ -33,6 +34,11 @@ def require_dict_cache(request: Request) -> DictCache:
     if cache is None:
         raise APIError(503, "dictionary_unavailable", "Dictionary cache is not built")
     return cache
+
+
+def get_tokenization_cache(request: Request) -> TokenizationCache | None:
+    """Optional: content-word extraction degrades to always-tokenize without it."""
+    return getattr(request.app.state, "tokenization_cache", None)
 
 
 def get_audio_proxy(request: Request) -> AudioProxy:
