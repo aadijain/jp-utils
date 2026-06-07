@@ -24,6 +24,13 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 **Pipelines** are an ordered list of operations bound to a **(deck, note type)** pair. A pipeline runs its operations against the matching notes, manually or automatically.
 
+## Configuration
+
+Configure from **Tools -> jp-utils Settings…**, which has two tabs:
+
+- **Backend** - the `server_url` and `token` of your running backend (**Test connection** verifies both).
+- **Field mappings** - per note-type alias maps: bind each logical alias to the actual field on that note type. Seeded for the **Lapis** note type; remap or add note types here.
+
 ## Development
 
 ```bash
@@ -40,6 +47,7 @@ src/jp_utils/
   client.py          BackendClient - the only network seam (urllib)
   config.py          AddonConfig: aliases, note-type field maps, pipelines
   ops/               the operations (see registry.py for the assembled list)
+  ui/                config_dialog, params_dialog, run (the pipeline runner), auto, browser
   manifest.json / config.json / config.md   add-on packaging
 build.py             vendors shared/ and zips the .ankiaddon
 tests/               pytest suite
