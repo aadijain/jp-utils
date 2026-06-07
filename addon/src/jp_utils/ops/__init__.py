@@ -6,23 +6,33 @@ and their registry are layered on top.
 """
 
 from .base import (
+    ONLY_IF_EMPTY,
     ConfiguredOp,
+    FieldOperation,
     FieldUpdate,
+    IOSpec,
     NoteFields,
     NotePlan,
     Operation,
+    ParamSpec,
     plan_operations,
+    resolve_params,
     resolve_pipeline_steps,
 )
 from .registry import ALL_OPERATIONS
 
 __all__ = [
     "ALL_OPERATIONS",
+    "ONLY_IF_EMPTY",
     "ConfiguredOp",
+    "FieldOperation",
     "FieldUpdate",
+    "IOSpec",
     "NoteFields",
     "NotePlan",
     "Operation",
+    "ParamSpec",
     "plan_operations",
+    "resolve_params",
     "resolve_pipeline_steps",
 ]
