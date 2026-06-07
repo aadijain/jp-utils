@@ -8,3 +8,15 @@ JSON below). All settings here are also editable as raw JSON.
 - **token** - the bearer token the backend requires on `/v1` routes
   (`JP_UTILS_API_TOKEN` on the server). Use **Test connection** in the settings
   dialog to verify the URL and token together.
+- **note_types** - per note-type **alias maps**: each binds a logical alias (e.g.
+  `sentence`, `word-reading`) to the actual field on that note type. One flat
+  `{alias: field}` map per note type; whether an alias is read or written is a
+  property of each operation, not the binding. Seeded with defaults for the
+  **Lapis** note type; remap any field or add other note types from the settings
+  dialog.
+- **pipelines** - ordered operations bound to a **(deck, note type)**. Each
+  pipeline has a `deck` (blank = any deck of that note type), a `note_type`, an
+  `enabled` flag, and `steps` (each an operation `op` key + `only_if_empty`).
+  Pipelines run from the settings dialog's **Run now** button or the Browser
+  **Notes -> jp-utils: Run pipeline** action. Empty by default - create your
+  pipelines (e.g. one per deck) in the settings dialog.
