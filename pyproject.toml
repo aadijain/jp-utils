@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend", "shared"]
+members = ["backend", "shared", "addon"]
 
 [dependency-groups]
 dev = ["pyright>=1.1.390"]
@@ -8,11 +8,19 @@ dev = ["pyright>=1.1.390"]
 # Type-check first-party source only. Test files lean on loose stand-ins (None
 # clients, duck-typed fakes, unannotated overrides) that intentionally violate the
 # production type contracts, so checking them adds noise without catching real bugs.
-include = ["backend/app", "shared/src"]
+include = ["backend/app", "addon/src", "shared/src"]
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
 venvPath = "."
 venv = ".venv"
+
+# The add-on imports `aqt`/`anki`, which are NOT pip-installed (it runs inside
+# Anki's bundled Python), so missing-import checking is turned off for addon/src
+# only - it stays on for the backend + shared so a typo'd first-party import is
+# still caught there.
+[[tool.pyright.executionEnvironments]]
+root = "addon/src"
+reportMissingImports = false
 
 [tool.ruff]
 line-length = 100
@@ -22,7 +30,7 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "shared", "tests"]
+known-first-party = ["app", "shared", "jp_utils", "tests"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection defaults (Depends/Header/...) are the idiomatic
