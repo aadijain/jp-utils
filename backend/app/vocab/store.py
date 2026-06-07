@@ -61,6 +61,19 @@ _PRESENT = {VocabAction.SEEN, VocabAction.LEARNT, VocabAction.IGNORED, VocabActi
 _AUTO_RANK = {WordStatus.UNKNOWN: 0, WordStatus.SEEN: 1, WordStatus.LEARNT: 2}
 _MANUAL_TERMINAL = {WordStatus.IGNORED, WordStatus.BLACKLISTED}
 
+# Collapse-ordering for the lemma-only projection: when a lemma has several stored
+# readings with different statuses, its lemma-level status is the most-advanced one
+# (terminal ignored/blacklisted outrank learnt > seen > unknown). Used by the
+# lemma-only status match so a reading mismatch (dict-preferred store reading
+# vs Sudachi query reading) can never let a known word slip through as `unknown`.
+_COLLAPSE_RANK = {
+    WordStatus.UNKNOWN: 0,
+    WordStatus.SEEN: 1,
+    WordStatus.LEARNT: 2,
+    WordStatus.IGNORED: 3,
+    WordStatus.BLACKLISTED: 4,
+}
+
 
 def _status_of(action: str) -> WordStatus:
     try:
@@ -110,6 +123,21 @@ class VocabStore:
         return {
             (r["lemma"], r["reading"]): _status_of(r["action"]) for r in self._read(_CURRENT_SQL)
         }
+
+    def _lemma_status_map(self) -> dict[str, WordStatus]:
+        """Current status per lemma, collapsed across all its stored readings.
+
+        A lemma's status is the most-advanced one over its readings (see
+        ``_COLLAPSE_RANK``), so the lemma-only status match is conservative: if any
+        reading is learnt/ignored/blacklisted the whole lemma counts as such.
+        """
+        collapsed: dict[str, WordStatus] = {}
+        for r in self._read(_CURRENT_SQL):
+            status = _status_of(r["action"])
+            current = collapsed.get(r["lemma"])
+            if current is None or _COLLAPSE_RANK[status] > _COLLAPSE_RANK[current]:
+                collapsed[r["lemma"]] = status
+        return collapsed
 
     def record(self, entries: Iterable[RecordEntry], force: bool = False) -> int:
         """Append a batch of events; returns the number of rows actually written.
@@ -164,15 +192,28 @@ class VocabStore:
         return {r["lemma"] for r in self._read(_CURRENT_SQL) if r["action"] in _PRESENT}
 
     def filter_by_status(
-        self, words: Iterable[VocabWord], statuses: Iterable[WordStatus]
+        self,
+        words: Iterable[VocabWord],
+        statuses: Iterable[WordStatus],
+        match_lemma_only: bool = False,
     ) -> FilterByStatusResponse:
         """Keep the subset of `words` whose current status is in `statuses`.
 
-        Empty `statuses` falls back to unknown-only (the new-word default).
+        Empty `statuses` falls back to unknown-only (the new-word default). With
+        ``match_lemma_only`` a word is matched by its lemma alone (status collapsed
+        across readings, see :meth:`_lemma_status_map`) instead of by the exact
+        ``(lemma, reading)`` key - the reading-safe path generation uses so a
+        dict-vs-Sudachi reading mismatch can't surface a known word as unknown.
         """
         wanted = set(statuses) or {WordStatus.UNKNOWN}
-        smap = self._status_map()
-        matched = [w for w in words if smap.get((w.lemma, w.reading), WordStatus.UNKNOWN) in wanted]
+        if match_lemma_only:
+            lmap = self._lemma_status_map()
+            matched = [w for w in words if lmap.get(w.lemma, WordStatus.UNKNOWN) in wanted]
+        else:
+            smap = self._status_map()
+            matched = [
+                w for w in words if smap.get((w.lemma, w.reading), WordStatus.UNKNOWN) in wanted
+            ]
         return FilterByStatusResponse(matched=matched)
 
     def status(self) -> VocabStatus:
