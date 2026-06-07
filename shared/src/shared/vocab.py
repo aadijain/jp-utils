@@ -82,6 +82,10 @@ class FilterByStatusRequest:
     # keep only words whose current status is in this set; default = unknown-only
     # (today's "new words"). Generation passes {unknown, seen}.
     statuses: list[WordStatus] = field(default_factory=lambda: [WordStatus.UNKNOWN])
+    # match by lemma alone (status collapsed across readings) rather than the exact
+    # (lemma, reading) key. Generation sets this so a dict-vs-Sudachi reading
+    # mismatch can't let a known word slip through as unknown.
+    match_lemma_only: bool = False
 
 
 @dataclass
