@@ -16,6 +16,10 @@ python addon/build.py --install <addons21>  # dev: also drop an unzipped copy in
 
 The build script is stdlib-only and runs with bare `python`. Install the built `addon/dist/jp-utils.ankiaddon` in Anki via **Tools -> Add-ons -> Install from file…**, then restart Anki.
 
+## Concepts
+
+**Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
+
 ## Development
 
 ```bash
@@ -30,6 +34,7 @@ The UI and entry modules import `aqt`/PyQt6 and are exercised inside Anki, not u
 src/jp_utils/
   __init__.py        guards all Anki wiring behind a successful aqt import
   client.py          BackendClient - the only network seam (urllib)
+  ops/               the operations (see registry.py for the assembled list)
   manifest.json / config.json / config.md   add-on packaging
 build.py             vendors shared/ and zips the .ankiaddon
 tests/               pytest suite
