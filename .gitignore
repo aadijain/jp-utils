@@ -24,3 +24,7 @@ __pycache__/
 *.db-shm
 *.db-journal
 backend/data/dict/
+
+# Add-on build artifacts (shared/ is vendored in at build time; the zip is output)
+addon/src/jp_utils/_vendor/
+addon/dist/
