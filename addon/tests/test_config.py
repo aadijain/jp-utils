@@ -1,6 +1,6 @@
 """Tests for the add-on config schema (pure; no Anki)."""
 
-from jp_utils.config import AddonConfig, Pipeline, PipelineStep
+from jp_utils.config import AddonConfig, Pipeline, PipelineStep, find_pipeline
 
 
 def test_defaults_seed_lapis_but_no_pipelines() -> None:
@@ -66,3 +66,22 @@ def test_normalize_steps_drops_junk_and_defaults_only_if_empty() -> None:
 def test_present_pipelines_are_used() -> None:
     cfg = AddonConfig.from_dict({"pipelines": []})  # explicit empty list -> no pipelines
     assert cfg.pipelines == []
+
+
+def test_find_pipeline_exact_deck_wins_over_blank() -> None:
+    blank = Pipeline(deck="", note_type="Lapis")
+    exact = Pipeline(deck="Word", note_type="Lapis")
+    pipelines = [blank, exact]
+    assert find_pipeline(pipelines, "Word", "Lapis") is exact
+    assert find_pipeline(pipelines, "Other", "Lapis") is blank  # falls back to blank deck
+
+
+def test_find_pipeline_respects_note_type_and_enabled() -> None:
+    disabled = Pipeline(deck="Word", note_type="Lapis", enabled=False)
+    assert find_pipeline([disabled], "Word", "Lapis") is None  # disabled -> no match
+    other = Pipeline(deck="Word", note_type="Other")
+    assert find_pipeline([other], "Word", "Lapis") is None  # note type mismatch
+
+
+def test_find_pipeline_none_when_no_match() -> None:
+    assert find_pipeline([], "Word", "Lapis") is None
