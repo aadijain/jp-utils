@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 [manifest]
 members = [
     "backend",
+    "jp-utils-addon",
     "shared",
 ]
 
@@ -218,6 +219,21 @@ sdist = { url = "https://files.pythonhosted.org/packages/91/0e/9fffaacda59bdfa47
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/da/9657d637bcacdbaf6a914ce504000da5639f9d945f8d3552a940f021d6c0/jaconv-0.5.0-py3-none-any.whl", hash = "sha256:2914114fe761ca49fc7089e25e6ad4a400c26f262ffce84e13b176916b71610a", size = 16831, upload-time = "2026-02-08T11:15:55.322Z" },
 ]
+
+[[package]]
+name = "jp-utils-addon"
+version = "0.1.0"
+source = { editable = "addon" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "nodeenv"
