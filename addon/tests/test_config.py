@@ -54,13 +54,23 @@ def test_normalize_pipelines_drops_entries_without_note_type() -> None:
     assert cfg.pipelines[0].steps[0].op == "x"
 
 
-def test_normalize_steps_drops_junk_and_defaults_only_if_empty() -> None:
+def test_normalize_steps_drops_junk_and_keeps_params() -> None:
     cfg = AddonConfig.from_dict(
-        {"pipelines": [{"note_type": "N", "steps": [{"no_op": 1}, {"op": "definition"}]}]}
+        {
+            "pipelines": [
+                {
+                    "note_type": "N",
+                    "steps": [
+                        {"no_op": 1},
+                        {"op": "definition", "params": {"only_if_empty": False}},
+                    ],
+                }
+            ]
+        }
     )
     steps = cfg.pipelines[0].steps
-    assert [s.op for s in steps] == ["definition"]  # junk dropped
-    assert steps[0].only_if_empty is True  # conservative default
+    assert [s.op for s in steps] == ["definition"]  # junk (no "op") dropped
+    assert steps[0].params == {"only_if_empty": False}  # params preserved verbatim
 
 
 def test_present_pipelines_are_used() -> None:

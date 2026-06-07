@@ -66,13 +66,13 @@ def _default_note_types() -> dict[str, dict[str, str]]:
 class PipelineStep:
     """One operation in a pipeline, by its stable ``op`` key.
 
-    The step's position is its run order. ``only_if_empty`` leaves a populated
-    output field untouched (so existing values, or a field used as both input and
-    output, aren't overwritten). ``params`` is a reserved per-op option bag.
+    The step's position is its run order. ``params`` holds the operation's options
+    (the set an operation accepts is declared by its ``params_spec``, e.g.
+    ``only_if_empty`` for field-writing ops); unset params fall back to the spec
+    defaults when the pipeline runs.
     """
 
     op: str
-    only_if_empty: bool = True
     params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -129,7 +129,6 @@ def _normalize_steps(value) -> list[PipelineStep]:
         steps.append(
             PipelineStep(
                 op=item["op"],
-                only_if_empty=bool(item.get("only_if_empty", True)),
                 params=dict(params) if isinstance(params, dict) else {},
             )
         )

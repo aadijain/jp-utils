@@ -44,11 +44,6 @@ from .run import run_pipeline
 
 ALIAS_COLUMN_WIDTH = 220
 
-# Flags for a checkbox cell that still lets its row be selected.
-_CHECK_FLAGS = (
-    Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-)
-
 
 class _NoWheelComboBox(QComboBox):
     """A combo box that ignores mouse-wheel scrolls.
@@ -298,13 +293,12 @@ class ConfigDialog(QDialog):
 
         box.addWidget(QLabel("<b>Operations</b> (run top to bottom)"))
         steps_row = QHBoxLayout()
-        self._steps_table = QTableWidget(0, 2)
-        self._steps_table.setHorizontalHeaderLabels(["Only if empty", "Operation"])
+        self._steps_table = QTableWidget(0, 1)
+        self._steps_table.setHorizontalHeaderLabels(["Operation"])
         self._steps_table.verticalHeader().setVisible(False)
         self._steps_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._steps_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._steps_table.horizontalHeader().setStretchLastSection(True)
-        self._steps_table.setColumnWidth(0, 100)
         steps_row.addWidget(self._steps_table, stretch=1)
         move_col = QVBoxLayout()
         up = QPushButton("↑")
@@ -390,16 +384,10 @@ class ConfigDialog(QDialog):
         table = self._steps_table
         table.setRowCount(len(pipeline.steps))
         for r, step in enumerate(pipeline.steps):
-            check = QTableWidgetItem()
-            check.setFlags(_CHECK_FLAGS)
-            check.setCheckState(
-                Qt.CheckState.Checked if step.only_if_empty else Qt.CheckState.Unchecked
-            )
-            table.setItem(r, 0, check)
             op_item = QTableWidgetItem(step.op)  # shown verbatim
             op_item.setData(Qt.ItemDataRole.UserRole, step.op)
             op_item.setFlags(op_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            table.setItem(r, 1, op_item)
+            table.setItem(r, 0, op_item)
 
     def _on_target_edited(self, *_) -> None:
         """Live-update the list label as the deck / note type is edited."""
@@ -426,16 +414,15 @@ class ConfigDialog(QDialog):
         self._refresh_list(select=min(idx, len(self._pipelines) - 1))
 
     def _capture_steps(self) -> None:
-        """Rebuild the current pipeline's steps from the table (order + flags)."""
+        """Rebuild the current pipeline's steps from the table (order + params)."""
         if self._current_pipeline_index is None:
             return
         pipeline = self._pipelines[self._current_pipeline_index]
-        prior = {step.op: step.params for step in pipeline.steps}  # preserve reserved params
+        prior = {step.op: step.params for step in pipeline.steps}  # preserve per-op params
         steps: list[PipelineStep] = []
         for row in range(self._steps_table.rowCount()):
-            op = self._steps_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
-            only_if_empty = self._steps_table.item(row, 0).checkState() == Qt.CheckState.Checked
-            steps.append(PipelineStep(op, only_if_empty, dict(prior.get(op, {}))))
+            op = self._steps_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            steps.append(PipelineStep(op, dict(prior.get(op, {}))))
         pipeline.steps = steps
 
     def _capture_pipeline_editor(self) -> None:

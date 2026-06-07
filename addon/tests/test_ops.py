@@ -4,20 +4,27 @@ from dataclasses import dataclass, field
 
 from jp_utils.ops import (
     ConfiguredOp,
+    FieldOperation,
+    IOSpec,
     NoteFields,
-    Operation,
+    ParamSpec,
     plan_operations,
     resolve_pipeline_steps,
 )
 
 
-class _Upper(Operation):
-    """A dummy op: writes the uppercased `word` into `word-reading`."""
+class _Upper(FieldOperation):
+    """A dummy field op: writes the uppercased `word` into `word-reading`.
+
+    Inherits the only_if_empty param from FieldOperation; adds a `style` choice
+    to exercise multi-param resolution.
+    """
 
     key = "upper"
     label = "Upper"
     input_aliases = ("word",)
     output_alias = "word-reading"
+    params_spec = (*FieldOperation.params_spec, ParamSpec("style", "Style", "choice", "plain"))
 
     def __init__(self) -> None:
         self.calls: list[list[dict[str, str]]] = []  # record each batch for assertions
@@ -32,7 +39,6 @@ class _Step:
     """Duck-typed pipeline step for the resolver."""
 
     op: str
-    only_if_empty: bool = False
     params: dict = field(default_factory=dict)
 
 
@@ -49,11 +55,18 @@ def test_plan_records_only_changed_values() -> None:
     assert plans[0].updates[0].value == "NEKO"
 
 
-def test_only_if_empty_skips_populated_output() -> None:
+def test_only_if_empty_param_skips_populated_output() -> None:
     op = _Upper()
     notes = [_note(1, "neko", reading="stale")]
-    plans = plan_operations(None, [ConfiguredOp(op, only_if_empty=True)], notes)
+    plans = plan_operations(None, [ConfiguredOp(op, {"only_if_empty": True})], notes)
     assert plans == []  # output already has a value -> skipped
+
+
+def test_no_only_if_empty_param_overwrites() -> None:
+    op = _Upper()
+    notes = [_note(1, "neko", reading="stale")]
+    plans = plan_operations(None, [ConfiguredOp(op, {})], notes)  # param absent -> default off
+    assert plans[0].updates[0].value == "NEKO"
 
 
 def test_applicable_skips_missing_input() -> None:
@@ -75,11 +88,47 @@ def test_compute_is_called_once_per_op_batched() -> None:
     ]
 
 
-def test_resolve_keeps_order_and_drops_unregistered() -> None:
+def test_resolve_keeps_order_drops_unregistered_and_fills_param_defaults() -> None:
     op = _Upper()
-    steps = [_Step("ghost"), _Step("upper", only_if_empty=True, params={"x": 1})]
+    steps = [_Step("ghost"), _Step("upper", params={"only_if_empty": False})]
     resolved = resolve_pipeline_steps(steps, [op])
     assert len(resolved) == 1  # unknown "ghost" dropped
     assert resolved[0].operation is op
-    assert resolved[0].only_if_empty is True
-    assert resolved[0].params == {"x": 1}
+    # spec defaults filled (style), overlaid with the step's stored param
+    assert resolved[0].params == {"only_if_empty": False, "style": "plain"}
+
+
+def test_default_io_spec_and_display_derive_from_static_attrs() -> None:
+    op = _Upper()
+    spec = op.io_spec()
+    assert spec.required_inputs == ("word",)
+    assert spec.optional_inputs == ()
+    assert spec.outputs == ("word-reading",)
+    assert op.io_display() == "{word-reading} ← {word}"
+
+
+class _ClearAlias(FieldOperation):
+    """Param-driven field op: reads+writes whichever alias `target` names, in place."""
+
+    key = "clear-alias"
+    label = "Clear alias"
+    params_spec = (ParamSpec("target", "Target", "choice", "sentence"),)
+
+    def io_spec(self, params=None):
+        target = (params or {}).get("target") or "sentence"
+        return IOSpec(required_inputs=(target,), outputs=(target,))
+
+    def compute(self, client, sources, params=None):
+        target = (params or {}).get("target") or "sentence"
+        return [s.get(target, "").strip() or None for s in sources]
+
+
+def test_field_op_with_no_resolved_output_writes_nothing() -> None:
+    note = NoteFields(note_id=1, fields={"word": "neko"})
+
+    class _Blank(_ClearAlias):
+        def io_spec(self, params=None):
+            return IOSpec()  # no required inputs, no outputs
+
+    plans = plan_operations(None, [ConfiguredOp(_Blank(), {})], [note])
+    assert plans == []
