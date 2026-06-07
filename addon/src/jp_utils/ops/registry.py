@@ -1,9 +1,12 @@
 """The concrete operations the add-on offers.
 
-Each operation lives in its own module and appends itself here; the wiring layer
-(runner, Pipelines tab) reads this list.
+Each operation lives in its own module; this list assembles them for the wiring
+layer (runner, Pipelines tab) to iterate. Grows one operation at a time.
 """
 
 from .base import Operation
+from .word_reading import WordReadingOperation
 
-ALL_OPERATIONS: list[Operation] = []
+ALL_OPERATIONS: list[Operation] = [
+    WordReadingOperation(),
+]
