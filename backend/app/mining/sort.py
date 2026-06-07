@@ -8,6 +8,7 @@ itself stays pure in `ordering.py`; this layer feeds it.
 
 from collections.abc import Sequence
 
+from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.mining.ordering import nplus1_order
 from app.text.tokenizer import Tokenizer
@@ -40,11 +41,12 @@ def nplus1_sort(
     store: VocabStore,
     cache: DictCache | None,
     mode: SplitMode = SplitMode.C,
+    tok_cache: TokenizationCache | None = None,
 ) -> Nplus1SortResponse:
     """Score + greedily order the new-card queue n+1. Result aligns with `sentences`."""
-    # Each card's content words, tokenized now (the stable, cacheable half of the work).
+    # Each card's content words; the extractor memoizes per sentence in `tok_cache`.
     word_lists: list[list[VocabWord]] = [
-        content_words_with_readings(tokenizer, s.text, mode) for s in sentences
+        content_words_with_readings(tokenizer, s.text, mode, tok_cache) for s in sentences
     ]
     lemma_lists = [[w.lemma for w in words] for words in word_lists]
     known = store.current_lemmas()

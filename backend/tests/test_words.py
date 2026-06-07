@@ -1,9 +1,20 @@
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
+from app.cache import TokenizationCache, sentence_hash
 from app.text.tokenizer import Tokenizer
-from app.text.words import content_words, is_content
+from app.text.words import content_words, content_words_with_readings, is_content
 
 
 def _tok(tokenizer: Tokenizer, text: str):
     return tokenizer.tokenize(text)[0]
+
+
+@pytest.fixture
+def cache(tmp_path: Path) -> TokenizationCache:
+    return TokenizationCache.open(tmp_path / "tok.db")
 
 
 def test_keeps_nouns_and_verbs_drops_particles(tokenizer: Tokenizer) -> None:
@@ -30,3 +41,22 @@ def test_drops_proper_nouns_and_numerals(tokenizer: Tokenizer) -> None:
 def test_empty_text(tokenizer: Tokenizer) -> None:
     assert content_words(tokenizer, "") == []
     assert content_words(tokenizer, "。、！") == []
+
+
+def test_cache_miss_populates(tokenizer: Tokenizer, cache: TokenizationCache) -> None:
+    words = content_words_with_readings(tokenizer, "犬が走る", cache=cache)
+    key = sentence_hash("犬が走る")
+    assert cache.get_many([key]) == {key: words}
+
+
+def test_cache_hit_skips_tokenization(tokenizer: Tokenizer, cache: TokenizationCache) -> None:
+    first = content_words_with_readings(tokenizer, "猫が魚を食べた", cache=cache)
+    # A spy tokenizer that explodes if touched; the cached hit must not reach it.
+    spy = mock.create_autospec(tokenizer, instance=True)
+    spy.tokenize.side_effect = AssertionError("tokenizer called on cache hit")
+    assert content_words_with_readings(spy, "猫が魚を食べた", cache=cache) == first
+
+
+def test_no_cache_argument_still_extracts(tokenizer: Tokenizer) -> None:
+    # The cache is optional; without it the extractor behaves exactly as before.
+    assert content_words_with_readings(tokenizer, "猫が魚を食べた")[0].lemma == "猫"

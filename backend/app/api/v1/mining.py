@@ -14,8 +14,9 @@ known set, and returns a greedy n+1 ordering as a per-card sequence number plus 
 
 from fastapi import APIRouter, Depends
 
-from app.api.v1.deps import get_dict_cache, get_tokenizer
+from app.api.v1.deps import get_dict_cache, get_tokenization_cache, get_tokenizer
 from app.api.v1.vocab import get_vocab_store
+from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.mining import nplus1_sort
 from app.text.tokenizer import Tokenizer
@@ -31,6 +32,7 @@ def nplus1sort(
     tokenizer: Tokenizer = Depends(get_tokenizer),
     store: VocabStore = Depends(get_vocab_store),
     cache: DictCache | None = Depends(get_dict_cache),
+    tok_cache: TokenizationCache | None = Depends(get_tokenization_cache),
 ) -> Nplus1SortResponse:
     """Order the new-card queue n+1 (fewest new words first). Aligned with `req.sentences`."""
-    return nplus1_sort(req.sentences, tokenizer, store, cache, req.mode)
+    return nplus1_sort(req.sentences, tokenizer, store, cache, req.mode, tok_cache)
