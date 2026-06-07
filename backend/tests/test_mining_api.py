@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.cache import TokenizationCache, sentence_hash
 from app.config import Settings, get_settings
 from app.dicts import DictCache
 from app.main import create_app
@@ -10,14 +13,15 @@ from shared.vocab import RecordEntry
 
 @pytest.fixture
 def mining_client(
-    settings: Settings, tokenizer, vocab_store: VocabStore, built_cache
+    settings: Settings, tokenizer, vocab_store: VocabStore, built_cache, tmp_path: Path
 ) -> TestClient:
-    """Client with the tokenizer, vocab store and (synthetic) dict cache wired up."""
+    """Client with the tokenizer, vocab store, dict cache and tokenization cache wired up."""
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.tokenizer = tokenizer
     app.state.vocab_store = vocab_store
     app.state.dict_cache = DictCache.open(built_cache)
+    app.state.tokenization_cache = TokenizationCache.open(tmp_path / "tok.db")
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -45,6 +49,16 @@ def test_nplus1_orders_fewest_new_words_first(
     lemmas_1 = [w["lemma"] for w in results[1]["words"]]
     assert "魚" in lemmas_1 and "食べる" in lemmas_1
     assert body["version"] == vocab_store.status().version
+
+
+def test_sort_populates_tokenization_cache(
+    mining_client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    # Sorting tokenizes each sentence once and memoizes it server-side.
+    _sort(mining_client, auth_headers, ["猫が魚を食べる"])
+    cache: TokenizationCache = mining_client.app.state.tokenization_cache
+    cached = cache.get_many([sentence_hash("猫が魚を食べる")])
+    assert [w.lemma for w in cached[sentence_hash("猫が魚を食べる")]] == ["猫", "魚", "食べる"]
 
 
 def test_works_without_dict_cache(
