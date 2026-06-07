@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.v1 import router as v1_router
+from app.cache import TokenizationCache
 from app.config import Settings, get_settings
 from app.dicts import DictCache
 from app.errors import register_exception_handlers
@@ -32,6 +33,10 @@ def _vocab_path(settings: Settings) -> Path | None:
     return Path(settings.vocab_db_path) if settings.vocab_db_path else None
 
 
+def _tok_cache_path(settings: Settings) -> Path | None:
+    return Path(settings.tokenization_cache_path) if settings.tokenization_cache_path else None
+
+
 def _build_tokenizer() -> Tokenizer | None:
     try:
         tokenizer = Tokenizer()
@@ -48,6 +53,7 @@ async def lifespan(app: FastAPI):
     app.state.dict_cache = DictCache.open(_cache_path(settings))
     app.state.tokenizer = _build_tokenizer()
     app.state.vocab_store = VocabStore.open(_vocab_path(settings))
+    app.state.tokenization_cache = TokenizationCache.open(_tok_cache_path(settings))
     app.state.audio_proxy = AudioProxy(settings.audio_url)
     try:
         yield
@@ -56,6 +62,8 @@ async def lifespan(app: FastAPI):
             app.state.dict_cache.close()
         if app.state.vocab_store is not None:
             app.state.vocab_store.close()
+        if app.state.tokenization_cache is not None:
+            app.state.tokenization_cache.close()
         if app.state.audio_proxy is not None:
             app.state.audio_proxy.close()
 
