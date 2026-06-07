@@ -17,8 +17,49 @@ the wiring layer, not here.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..client import BackendClient
+
+
+@dataclass
+class ParamSpec:
+    """Declares one option an operation accepts, so the UI can render an editor.
+
+    ``kind`` is ``"bool"`` (checkbox), ``"choice"`` (combo over ``choices``), or
+    ``"text"`` (line edit). ``default`` is used when a step omits the param.
+    """
+
+    key: str
+    label: str
+    kind: str
+    default: Any = None
+    choices: tuple[str, ...] = ()
+    description: str = ""  # one-line help shown under the editor widget
+
+
+@dataclass(frozen=True)
+class IOSpec:
+    """An operation's alias contract for one resolved set of params.
+
+    The framework reads an op's aliases through this (never off ``input_aliases`` /
+    ``output_alias`` directly), so an op can DERIVE its contract from its params -
+    e.g. a configurable target field - instead of hard-coding it.
+
+    - ``required_inputs``: each must be MAPPED on the note type (else a validity
+      warning) and present+non-empty on a note (else the op skips it).
+    - ``optional_inputs``: read when available, but never gate applicability and
+      never raise a mapping warning. Shown in the I/O display so the user knows
+      they're consulted.
+    - ``outputs``: the aliases the op WRITES (empty for ops that produce no field).
+
+    Decoupled from the actual computation: an op may declare aliases here for
+    display/validation that differ from how it internally fetches data.
+    """
+
+    required_inputs: tuple[str, ...] = ()
+    optional_inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -37,10 +78,9 @@ class NoteFields:
 
 @dataclass
 class ConfiguredOp:
-    """An operation paired with the run settings from its pipeline step."""
+    """An operation paired with its resolved params (spec defaults + step overrides)."""
 
     operation: "Operation"
-    only_if_empty: bool = False
     params: dict = field(default_factory=dict)
 
 
@@ -61,12 +101,54 @@ class Operation(ABC):
 
     key: str  # stable identifier (stored in a pipeline step)
     label: str  # human label (UI)
-    input_aliases: tuple[str, ...]  # aliases this operation reads
+    input_aliases: tuple[str, ...] = ()  # required inputs (static default contract)
+    optional_input_aliases: tuple[str, ...] = ()  # read-if-present, never gating
     output_alias: str  # alias this operation writes
+    params_spec: tuple[ParamSpec, ...] = ()  # the options this operation accepts
+    # Shown in the I/O column when the op writes NO output field (sort/generate/
+    # status ops set a verb here, e.g. "(reorder cards)").
+    io_verb: str = ""
 
-    def applicable(self, inputs: dict[str, str]) -> bool:
-        """True when every required input alias is present and non-empty."""
-        return all(inputs.get(alias) for alias in self.input_aliases)
+    def io_spec(self, params: dict | None = None) -> IOSpec:
+        """This op's alias contract for ``params`` (default: its static attributes).
+
+        Override to derive aliases from params (dynamic I/O); the framework calls
+        this everywhere it needs to know what an op reads/writes, so an override is
+        honoured by applicability, validation, generation, and the runner alike.
+        ``output_alias`` (field/media ops only) becomes the single output.
+        """
+        output = getattr(self, "output_alias", None)
+        return IOSpec(
+            required_inputs=tuple(self.input_aliases),
+            optional_inputs=tuple(self.optional_input_aliases),
+            outputs=(output,) if output else (),
+        )
+
+    def io_display(self, params: dict | None = None) -> str:
+        """The text shown in the pipeline editor's I/O column for this op.
+
+        Deliberately a LABEL, not the contract - decoupled from the op's internals,
+        so it can read however makes sense. The default renders ``{outputs} ←
+        {inputs}`` from :meth:`io_spec` (optional inputs marked with a trailing
+        ``?``), falling back to :attr:`io_verb` when the op writes no field.
+        Override for anything bespoke.
+        """
+        spec = self.io_spec(params)
+        inputs = ", ".join((*spec.required_inputs, *(f"{a}?" for a in spec.optional_inputs)))
+        if spec.outputs:
+            target = "{" + ", ".join(spec.outputs) + "}"
+        else:
+            target = self.io_verb
+        return f"{target} ← {{{inputs}}}"
+
+    def applicable(self, inputs: dict[str, str], params: dict | None = None) -> bool:
+        """True when every REQUIRED input alias is present and non-empty.
+
+        Optional inputs (:attr:`IOSpec.optional_inputs`) are read when available but
+        never gate this. ``params`` lets an op with a param-driven contract resolve
+        its required set; ops with a fixed contract ignore it.
+        """
+        return all(inputs.get(alias) for alias in self.io_spec(params).required_inputs)
 
     @abstractmethod
     def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
@@ -79,20 +161,50 @@ class Operation(ABC):
         """
 
 
+# Shared spec for field-writing operations: skip a note whose output field is
+# already populated. Not every operation has this (e.g. a sort op would not).
+ONLY_IF_EMPTY = ParamSpec(
+    "only_if_empty",
+    "Only fill empty fields",
+    "bool",
+    default=True,
+    description="Skip notes whose target field already has a value (never overwrite it).",
+)
+
+
+class FieldOperation(Operation, ABC):
+    """An operation that writes one output field; exposes the only_if_empty flag."""
+
+    params_spec = (ONLY_IF_EMPTY,)
+
+
+def resolve_params(op: Operation, step_params: dict | None) -> dict:
+    """An op's effective params: its spec defaults overlaid with a step's overrides.
+
+    The single source of truth for "what params is this op running with", so the
+    param-driven :meth:`Operation.io_spec` sees the same values everywhere (runner,
+    validation, the editor's I/O display).
+    """
+    params = {spec.key: spec.default for spec in op.params_spec}
+    params.update(step_params or {})
+    return params
+
+
 def resolve_pipeline_steps(steps, registry: list[Operation]) -> list[ConfiguredOp]:
     """Resolve a pipeline's stored steps against the registry into runnable ops.
 
-    Keeps the steps' order and each step's ``only_if_empty``/``params``; drops a
-    step whose ``op`` key is no longer registered. Steps are duck-typed
-    (``op``/``only_if_empty``/``params``). A pipeline lists exactly the operations
-    the user added, so there is no per-step enable flag - presence means it runs.
+    Keeps the steps' order; drops a step whose ``op`` key is no longer registered.
+    Each op's params start from its spec defaults, overlaid with the step's stored
+    params. Steps are duck-typed (``op``/``params``). A pipeline lists exactly the
+    operations the user added, so there is no per-step enable flag.
     """
     by_key = {op.key: op for op in registry}
     chosen: list[ConfiguredOp] = []
     for step in steps:
         operation = by_key.get(step.op)
-        if operation is not None:
-            chosen.append(ConfiguredOp(operation, step.only_if_empty, dict(step.params)))
+        if operation is None:
+            continue
+        chosen.append(ConfiguredOp(operation, resolve_params(operation, step.params)))
     return chosen
 
 
@@ -113,11 +225,16 @@ def plan_operations(
     plans: dict[int, NotePlan] = {n.note_id: NotePlan(note_id=n.note_id) for n in notes}
     for item in configured:
         op = item.operation
+        outputs = op.io_spec(item.params).outputs
+        if not outputs:  # a field op with no resolved target writes nothing
+            continue
+        out_alias = outputs[0]
+        only_if_empty = bool(item.params.get("only_if_empty", False))
         applicable = [
             n
             for n in notes
-            if op.applicable(n.fields)
-            and not (item.only_if_empty and n.fields.get(op.output_alias))
+            if op.applicable(n.fields, item.params)
+            and not (only_if_empty and n.fields.get(out_alias))
         ]
         if not applicable:
             continue
@@ -125,6 +242,6 @@ def plan_operations(
         for note, value in zip(applicable, values, strict=True):
             if value is None:
                 continue
-            if value != note.fields.get(op.output_alias, ""):
-                plans[note.note_id].updates.append(FieldUpdate(op.output_alias, value))
+            if value != note.fields.get(out_alias, ""):
+                plans[note.note_id].updates.append(FieldUpdate(out_alias, value))
     return [p for p in plans.values() if p.updates]
