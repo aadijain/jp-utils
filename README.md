@@ -20,6 +20,10 @@ The repo is a single [uv](https://docs.astral.sh/uv/) workspace (one `.venv` and
 
 The **backend** exposes a batch-first, bearer-authenticated HTTP API: tokenization, word spacing, furigana, kana/romaji conversion, dictionary meanings, frequency ranks, deinflection, content-word extraction, and pronunciation audio. Alongside it, the **vocab store** records the words you know (keyed on word + reading, never card ids). The **mining** layer composes the text service with your known-words list - the home for features that need both text processing and your vocabulary state; today it provides n+1 sentence ordering (order a batch of sentences so each introduces as few new words as possible). See [backend/README.md](backend/README.md) for the full endpoint list.
 
+The **add-on** binds logical field aliases to your note types and runs ordered **pipelines** of operations against a deck: furigana, readings, definitions, frequency, audio, n+1 sequencing, frequency sorting, and auto-generation of vocab cards from mined sentences. Pipelines run manually or automatically on Anki start. See [addon/README.md](addon/README.md).
+
+Together they automate a single-user mining loop: mine sentence cards from jp media, auto-sort them n+1, auto-enrich them, and on first review auto-create enriched vocab cards for the words that are new to you.
+
 ## Quick start
 
 **Backend** (`cd backend`):
