@@ -8,6 +8,7 @@ from .base import Operation
 from .frequency import FrequencyOperation
 from .int_sort import IntSortOperation
 from .sentence_furigana import SentenceFuriganaOperation
+from .word_audio import WordAudioOperation
 from .word_definition import WordDefinitionOperation
 from .word_furigana import WordFuriganaOperation
 from .word_reading import WordReadingOperation
@@ -18,5 +19,6 @@ ALL_OPERATIONS: list[Operation] = [
     SentenceFuriganaOperation(),
     WordDefinitionOperation(),
     FrequencyOperation(),
+    WordAudioOperation(),
     IntSortOperation(),
 ]

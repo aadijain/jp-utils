@@ -28,11 +28,12 @@ DEFAULT_SERVER_URL = "http://localhost:8000"
 
 # Every alias an operation may read or write, bound to a note field by the
 # per-note-type map. One flat namespace: an alias is the same logical field
-# whether read or written (e.g. `frequency` is written by the frequency op; `rank`
-# is the integer the int-sort op orders new cards by - seeded onto the same Lapis
-# `FreqSort` field so sorting works out of the box, but the user may remap it).
-# Direction is a property of each operation (`input_aliases` / `output_alias`), not
-# of the field binding. Shown verbatim in the UI (lowercase, hyphenated) - do not relabel.
+# whether read or written (e.g. `word-reading` is written by the word-reading op
+# and read by the definition/audio ops; `rank` is the integer the int-sort op
+# orders new cards by - seeded onto the same Lapis `FreqSort` field as `frequency`
+# so sorting works out of the box, but the user may remap it). Direction is a
+# property of each operation (`input_aliases` / `output_alias`), not of the field
+# binding. Shown verbatim in the UI (lowercase, hyphenated) - do not relabel.
 ALIASES: tuple[str, ...] = (
     "word",
     "sentence",
@@ -41,6 +42,7 @@ ALIASES: tuple[str, ...] = (
     "sentence-furigana",
     "definition",
     "frequency",
+    "word-audio",
     "rank",
 )
 
@@ -55,6 +57,7 @@ DEFAULT_FIELDS: dict[str, str] = {
     "sentence-furigana": "SentenceFurigana",
     "definition": "MainDefinition",
     "frequency": "FreqSort",
+    "word-audio": "ExpressionAudio",
     "rank": "FreqSort",
 }
 
