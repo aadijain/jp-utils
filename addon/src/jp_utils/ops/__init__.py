@@ -6,6 +6,7 @@ and their registry are layered on top.
 """
 
 from .base import (
+    DIRECTION,
     ONLY_IF_EMPTY,
     ConfiguredOp,
     FieldOperation,
@@ -15,6 +16,7 @@ from .base import (
     NotePlan,
     Operation,
     ParamSpec,
+    SortOperation,
     plan_operations,
     resolve_params,
     resolve_pipeline_steps,
@@ -23,6 +25,7 @@ from .registry import ALL_OPERATIONS
 
 __all__ = [
     "ALL_OPERATIONS",
+    "DIRECTION",
     "ONLY_IF_EMPTY",
     "ConfiguredOp",
     "FieldOperation",
@@ -32,6 +35,7 @@ __all__ = [
     "NotePlan",
     "Operation",
     "ParamSpec",
+    "SortOperation",
     "plan_operations",
     "resolve_params",
     "resolve_pipeline_steps",
