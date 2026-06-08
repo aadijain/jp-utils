@@ -42,11 +42,12 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 
 - **Backend** - the `server_url` and `token` of your running backend (**Test connection** verifies both).
 - **Field mappings** - per note-type alias maps: bind each logical alias to the actual field on that note type. Seeded for the **Lapis** note type; remap or add note types here.
-- **Pipelines** - a list of pipelines plus an editor. Each pipeline picks a **(deck, note type)**, an **Enabled** toggle, and an ordered list of operation steps with per-step options. Invalid pipelines (unset deck/note type, unmapped aliases, duplicate targets) are flagged with a `⚠`.
+- **Pipelines** - a list of pipelines plus an editor. Each pipeline picks a **(deck, note type)**, an **Enabled** toggle, optional **auto-run triggers** (e.g. run on Anki start), and an ordered list of operation steps with per-step options. Invalid pipelines (unset deck/note type, unmapped aliases, duplicate targets) are flagged with a `⚠`.
 
 ## Running pipelines
 
 - **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
+- **Automatic** - a pipeline that opts into the **start** trigger runs silently when Anki starts.
 
 ## Development
 

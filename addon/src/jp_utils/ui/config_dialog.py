@@ -43,6 +43,7 @@ from aqt.utils import showInfo, showWarning, tooltip
 from ..client import BackendClient, BackendError
 from ..config import (
     ALIASES,
+    AUTO_TRIGGERS,
     AddonConfig,
     Pipeline,
     PipelineStep,
@@ -322,9 +323,20 @@ class ConfigDialog(QDialog):
         self._ptype_combo.currentTextChanged.connect(self._on_target_edited)
         form.addRow("Note type", self._ptype_combo)
 
+        # Enabled + the per-pipeline auto-run triggers share one row (each pipeline
+        # chooses its own lifecycle events; empty = manual-only). Captured back in
+        # _capture_pipeline_editor.
         self._enabled_check = QCheckBox("Enabled")
         self._enabled_check.toggled.connect(self._on_enabled_toggled)
-        form.addRow("", self._enabled_check)
+        toggles = QHBoxLayout()
+        toggles.addWidget(self._enabled_check)
+        self._trigger_checks: dict[str, QCheckBox] = {}
+        for key, label in AUTO_TRIGGERS:
+            check = QCheckBox(label)
+            self._trigger_checks[key] = check
+            toggles.addWidget(check)
+        toggles.addStretch(1)
+        form.addRow("", toggles)
         box.addLayout(form)
 
         self._warning_label = QLabel("")
@@ -458,11 +470,15 @@ class ConfigDialog(QDialog):
             self._deck_combo.setCurrentText(pipeline.deck)
             self._ptype_combo.setCurrentText(pipeline.note_type)
             self._enabled_check.setChecked(pipeline.enabled)
+            for key, check in self._trigger_checks.items():
+                check.setChecked(key in pipeline.auto_triggers)
             self._render_steps_table(pipeline)
         else:
             self._deck_combo.setCurrentText("")
             self._ptype_combo.setCurrentText("")
             self._enabled_check.setChecked(False)
+            for check in self._trigger_checks.values():
+                check.setChecked(False)
             self._steps_table.setRowCount(0)
             self._update_op_buttons()
         self._revalidate()
@@ -582,6 +598,9 @@ class ConfigDialog(QDialog):
         pipeline.deck = self._deck_combo.currentText().strip()
         pipeline.note_type = self._ptype_combo.currentText().strip()
         pipeline.enabled = self._enabled_check.isChecked()
+        pipeline.auto_triggers = [
+            key for key, check in self._trigger_checks.items() if check.isChecked()
+        ]
         self._capture_steps()
 
     def _move_step(self, delta: int) -> None:
