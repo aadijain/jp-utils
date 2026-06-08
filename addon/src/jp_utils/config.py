@@ -28,9 +28,11 @@ DEFAULT_SERVER_URL = "http://localhost:8000"
 
 # Every alias an operation may read or write, bound to a note field by the
 # per-note-type map. One flat namespace: an alias is the same logical field
-# whether read or written. Direction is a property of each operation
-# (`input_aliases` / `output_alias`), not of the field binding. Shown verbatim in
-# the UI (lowercase, hyphenated) - do not relabel.
+# whether read or written (e.g. `frequency` is written by the frequency op; `rank`
+# is the integer the int-sort op orders new cards by - seeded onto the same Lapis
+# `FreqSort` field so sorting works out of the box, but the user may remap it).
+# Direction is a property of each operation (`input_aliases` / `output_alias`), not
+# of the field binding. Shown verbatim in the UI (lowercase, hyphenated) - do not relabel.
 ALIASES: tuple[str, ...] = (
     "word",
     "sentence",
@@ -39,6 +41,7 @@ ALIASES: tuple[str, ...] = (
     "sentence-furigana",
     "definition",
     "frequency",
+    "rank",
 )
 
 # Default alias -> field map seeded for the Lapis mining note type (seed only;
@@ -52,6 +55,7 @@ DEFAULT_FIELDS: dict[str, str] = {
     "sentence-furigana": "SentenceFurigana",
     "definition": "MainDefinition",
     "frequency": "FreqSort",
+    "rank": "FreqSort",
 }
 
 # Seeded note type (user-overridable). Only the note-type STRING is Lapis-bound.
