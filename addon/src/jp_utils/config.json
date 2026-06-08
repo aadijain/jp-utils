@@ -11,7 +11,10 @@
       "definition": "MainDefinition",
       "frequency": "FreqSort",
       "word-audio": "ExpressionAudio",
-      "rank": "FreqSort"
+      "rank": "FreqSort",
+      "sentence-audio": "SentenceAudio",
+      "sentence-image": "Picture",
+      "alt-definition": "Glossary"
     }
   },
   "pipelines": []
