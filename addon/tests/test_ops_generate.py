@@ -77,7 +77,12 @@ def test_plan_generation_emits_one_result_per_source_with_words():
     plans = plan_generation(client, configured, notes)
 
     assert plans == [
-        GenerationResult(note_id=1, op=plans[0].op, words=[{"lemma": "猫", "reading": "ねこ"}])
+        GenerationResult(
+            note_id=1,
+            op=plans[0].op,
+            params={"target_deck": "Words"},
+            words=[{"lemma": "猫", "reading": "ねこ"}],
+        )
     ]
 
 

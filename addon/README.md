@@ -36,8 +36,9 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
+| `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
 
-Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option.
+Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort` and `generate-vocab` operate over the whole target deck, not just a selected subset.
 
 ## Configuration
 
@@ -51,6 +52,19 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 
 - **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
 - **Automatic** - a pipeline that opts into the **start** trigger runs silently when Anki starts.
+
+## The mining loop
+
+The operations compose into a single-user study loop:
+
+1. Mine sentence cards from jp media into a mining deck.
+2. `nplus1-sequence` + `int-sort` auto-order the new cards so each introduces as few new words as possible.
+3. `sentence-furigana` (and friends) auto-enrich the mined cards.
+4. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
+5. The word enrichment ops (reading, definition, frequency, audio) enrich each new vocab card.
+6. `int-sort` orders the Word deck ascending by frequency rank.
+
+Each new vocab card records an `encountered` event in the vocab store, so it is never regenerated.
 
 ## Development
 
@@ -68,6 +82,7 @@ src/jp_utils/
   entry.py           setup(): Tools menu, Browser hook, auto-run lifecycle hooks
   client.py          BackendClient - the only network seam (urllib)
   config.py          AddonConfig: aliases, note-type field maps, pipelines
+  generation.py      pure helpers for vocab-card generation (no aqt)
   ops/               the operations (see registry.py for the assembled list)
   ui/                config_dialog, params_dialog, run (the pipeline runner), auto, browser
   manifest.json / config.json / config.md   add-on packaging
