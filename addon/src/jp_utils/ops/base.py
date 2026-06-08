@@ -36,6 +36,10 @@ class ParamSpec:
     default: Any = None
     choices: tuple[str, ...] = ()
     description: str = ""  # one-line help shown under the editor widget
+    # For a ``choice`` whose options aren't known statically: the UI fills them at
+    # edit time from the collection ("decks" -> deck names, "note_types" -> note-type
+    # names). Empty means use the static ``choices`` above.
+    choices_source: str = ""
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,21 @@ class MediaPlan:
     op: "MediaOperation"
     result: MediaResult
     params: dict = field(default_factory=dict)
+
+
+@dataclass
+class GenerationResult:
+    """New words a generate op found for one source note (computed in background).
+
+    ``words`` are the surviving new words as raw ``{"lemma", "reading"}`` dicts
+    (content words minus the ones already known). The wiring layer turns each into
+    a target-deck note on the UI thread (where it can dedup against existing notes
+    and copy context fields), so this carries only the backend-computed part.
+    """
+
+    note_id: int
+    op: "GenerateOperation"
+    words: list[dict]
 
 
 class Operation(ABC):
@@ -292,6 +311,28 @@ class MediaOperation(Operation, ABC):
         return f"[sound:{filename}]"
 
 
+class GenerateOperation(Operation, ABC):
+    """An operation that CREATES new notes in another deck from its source notes.
+
+    Unlike the other three kinds it writes no field on the source note; its product
+    is whole new notes (a vocab card per new word in a mined sentence). The
+    split mirrors :class:`MediaOperation`: :meth:`generate` does the backend-only
+    work in the background (tokenize + status-filter), and the wiring layer creates
+    the notes on the UI thread, where it can dedup against existing notes and copy
+    context fields. Targets (deck, note type) come from the op's params.
+    """
+
+    io_verb = "(create cards)"
+
+    @abstractmethod
+    def generate(self, client: BackendClient, sources: list[dict[str, str]]) -> list[list[dict]]:
+        """Per source note (aligned), the new words to create as ``{lemma, reading}``.
+
+        ``sources`` are the alias-keyed source-note views; the return is aligned to
+        it, each entry that note's surviving new words (empty = nothing to create).
+        """
+
+
 def resolve_params(op: Operation, step_params: dict | None) -> dict:
     """An op's effective params: its spec defaults overlaid with a step's overrides.
 
@@ -401,4 +442,32 @@ def plan_media(
                 plans.append(
                     MediaPlan(note_id=note.note_id, op=op, result=result, params=item.params)
                 )
+    return plans
+
+
+def plan_generation(
+    client: BackendClient,
+    configured: list[ConfiguredOp],
+    notes: list[NoteFields],
+) -> list[GenerationResult]:
+    """Compute each :class:`GenerateOperation`'s new words over the notes it applies to.
+
+    The background (IO-bound) half of generation: one batched backend pass per op
+    (tokenize + status-filter), skipping source notes missing a required input.
+    Returns one :class:`GenerationResult` per (source note, op) that produced at
+    least one new word; the wiring layer creates the notes on the UI thread.
+    Non-generate ops are ignored, so this is safe to call with a full op list.
+    """
+    plans: list[GenerationResult] = []
+    for item in configured:
+        op = item.operation
+        if not isinstance(op, GenerateOperation):
+            continue
+        applicable = [n for n in notes if op.applicable(n.fields, item.params)]
+        if not applicable:
+            continue
+        per_note = op.generate(client, [n.fields for n in applicable])
+        for note, words in zip(applicable, per_note, strict=True):
+            if words:
+                plans.append(GenerationResult(note_id=note.note_id, op=op, words=words))
     return plans
