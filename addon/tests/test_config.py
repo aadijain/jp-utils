@@ -1,6 +1,26 @@
 """Tests for the add-on config schema (pure; no Anki)."""
 
-from jp_utils.config import AddonConfig, Pipeline, PipelineStep, find_pipeline
+from jp_utils.config import (
+    AddonConfig,
+    Pipeline,
+    PipelineStep,
+    find_pipeline,
+    pipeline_problems,
+    step_unmapped_aliases,
+)
+
+
+class _Op:
+    """Duck-typed stand-in for an Operation (key + aliases) for validator tests."""
+
+    def __init__(self, key, input_aliases, output_alias):
+        self.key = key
+        self.input_aliases = input_aliases
+        self.output_alias = output_alias
+
+
+_OPS = [_Op("word-reading", ("word",), "word-reading")]
+_NOTE_TYPES = {"Lapis": {"word": "Expression", "word-reading": "Reading"}}
 
 
 def test_defaults_seed_lapis_but_no_pipelines() -> None:
@@ -78,12 +98,12 @@ def test_present_pipelines_are_used() -> None:
     assert cfg.pipelines == []
 
 
-def test_find_pipeline_exact_deck_wins_over_blank() -> None:
+def test_find_pipeline_requires_exact_deck_no_blank_fallback() -> None:
     blank = Pipeline(deck="", note_type="Lapis")
     exact = Pipeline(deck="Word", note_type="Lapis")
     pipelines = [blank, exact]
     assert find_pipeline(pipelines, "Word", "Lapis") is exact
-    assert find_pipeline(pipelines, "Other", "Lapis") is blank  # falls back to blank deck
+    assert find_pipeline(pipelines, "Other", "Lapis") is None  # blank deck is not a fallback
 
 
 def test_find_pipeline_respects_note_type_and_enabled() -> None:
@@ -95,3 +115,37 @@ def test_find_pipeline_respects_note_type_and_enabled() -> None:
 
 def test_find_pipeline_none_when_no_match() -> None:
     assert find_pipeline([], "Word", "Lapis") is None
+
+
+def test_pipeline_problems_none_when_valid() -> None:
+    p = Pipeline(deck="Word", note_type="Lapis", steps=[PipelineStep("word-reading")])
+    assert pipeline_problems(p, [p], _NOTE_TYPES, _OPS) == []
+
+
+def test_pipeline_problems_flags_missing_deck_and_note_type() -> None:
+    p = Pipeline(deck="", note_type="")
+    problems = pipeline_problems(p, [p], _NOTE_TYPES, _OPS)
+    assert any("deck" in m for m in problems)
+    assert any("note type" in m for m in problems)
+
+
+def test_pipeline_problems_flags_duplicate_target() -> None:
+    a = Pipeline(deck="Word", note_type="Lapis")
+    b = Pipeline(deck="Word", note_type="Lapis")
+    problems = pipeline_problems(a, [a, b], _NOTE_TYPES, _OPS)
+    assert any("Another pipeline" in m for m in problems)
+
+
+def test_pipeline_problems_flags_unmapped_alias() -> None:
+    # Note type maps the input but NOT the output alias -> op would no-op silently.
+    note_types = {"Lapis": {"word": "Expression"}}
+    p = Pipeline(deck="Word", note_type="Lapis", steps=[PipelineStep("word-reading")])
+    problems = pipeline_problems(p, [p], note_types, _OPS)
+    assert any("word-reading" in m for m in problems)
+
+
+def test_step_unmapped_aliases_lists_input_and_output() -> None:
+    p_step = PipelineStep("word-reading")
+    assert step_unmapped_aliases(p_step, {}, "Lapis", _OPS) == ["word", "word-reading"]
+    assert step_unmapped_aliases(p_step, _NOTE_TYPES, "Lapis", _OPS) == []
+    assert step_unmapped_aliases(PipelineStep("ghost"), {}, "Lapis", _OPS) == []  # unregistered
