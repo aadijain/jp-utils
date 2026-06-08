@@ -29,7 +29,7 @@ class _Upper(FieldOperation):
     def __init__(self) -> None:
         self.calls: list[list[dict[str, str]]] = []  # record each batch for assertions
 
-    def compute(self, client, sources):
+    def compute(self, client, sources, params=None):
         self.calls.append(sources)
         return [s["word"].upper() for s in sources]
 
