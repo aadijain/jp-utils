@@ -5,6 +5,7 @@ layer (runner, Pipelines tab) to iterate. Grows one operation at a time.
 """
 
 from .base import Operation
+from .frequency import FrequencyOperation
 from .word_definition import WordDefinitionOperation
 from .word_furigana import WordFuriganaOperation
 from .word_reading import WordReadingOperation
@@ -13,4 +14,5 @@ ALL_OPERATIONS: list[Operation] = [
     WordReadingOperation(),
     WordFuriganaOperation(),
     WordDefinitionOperation(),
+    FrequencyOperation(),
 ]
