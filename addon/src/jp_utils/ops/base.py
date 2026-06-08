@@ -96,14 +96,43 @@ class NotePlan:
     updates: list[FieldUpdate] = field(default_factory=list)
 
 
+@dataclass
+class MediaResult:
+    """A media file the backend produced for one note (e.g. word audio).
+
+    ``data`` is the raw bytes; ``filename`` is the suggested media filename. The
+    wiring layer writes the bytes into the collection's media folder on the UI
+    thread and then renders the resulting field value.
+    """
+
+    data: bytes
+    filename: str
+
+
+@dataclass
+class MediaPlan:
+    """A pending media write for one note: bytes fetched in the background, to be
+    saved into media and rendered into the op's output alias on the UI thread.
+
+    ``params`` are the step's resolved options, so the wiring resolves the op's
+    output alias through :meth:`MediaOperation.io_spec` (param-aware)."""
+
+    note_id: int
+    op: "MediaOperation"
+    result: MediaResult
+    params: dict = field(default_factory=dict)
+
+
 class Operation(ABC):
     """Base contract for a pipeline step: a keyed unit that may read input aliases.
 
-    Subclassed two ways: :class:`FieldOperation` (computes and writes one output
-    field, e.g. furigana/definition/frequency) and :class:`SortOperation`
-    (reorders a deck's new cards by a per-note key, writes no field). The shared
-    surface is ``key`` / ``label`` / ``input_aliases`` / ``params_spec`` +
-    :meth:`applicable`; ``output_alias`` and ``compute`` belong to field ops only.
+    Subclassed three ways: :class:`FieldOperation` (computes and writes one output
+    field, e.g. furigana/definition/frequency), :class:`SortOperation` (reorders a
+    deck's new cards by a per-note key, writes no field), and
+    :class:`MediaOperation` (fetches a media file, attaches it to the collection,
+    and writes a ``[sound:...]``/``<img>`` reference into one output field). The
+    shared surface is ``key`` / ``label`` / ``input_aliases`` / ``params_spec`` +
+    :meth:`applicable`; ``output_alias`` belongs to field/media ops.
     """
 
     key: str  # stable identifier (stored in a pipeline step)
@@ -231,6 +260,32 @@ class SortOperation(Operation, ABC):
         return [i for i, _ in present] + missing
 
 
+class MediaOperation(Operation, ABC):
+    """An operation that fetches a media file and writes a reference to one field.
+
+    Unlike a :class:`FieldOperation` (whose value is computed purely and written
+    directly), a media op's value is *bytes* that must be attached to the
+    collection's media folder before the field can reference them - an Anki I/O
+    that only the wiring layer can do, on the UI thread. So the op only
+    :meth:`fetch`es the bytes (the slow, IO-bound part, run in the background);
+    the wiring saves them via ``mw.col.media`` and calls :meth:`render` with the
+    resulting filename to build the field value (e.g. ``[sound:foo.mp3]``).
+    """
+
+    output_alias: str  # alias this operation writes the media reference into
+    params_spec = (ONLY_IF_EMPTY,)
+
+    @abstractmethod
+    def fetch(
+        self, client: BackendClient, sources: list[dict[str, str]]
+    ) -> list["MediaResult | None"]:
+        """Batch-fetch media for ``sources`` (aligned); ``None`` = no media for it."""
+
+    def render(self, filename: str) -> str:
+        """The field value referencing a saved media file (default: a sound tag)."""
+        return f"[sound:{filename}]"
+
+
 def resolve_params(op: Operation, step_params: dict | None) -> dict:
     """An op's effective params: its spec defaults overlaid with a step's overrides.
 
@@ -300,3 +355,44 @@ def plan_operations(
             if value != note.fields.get(out_alias, ""):
                 plans[note.note_id].updates.append(FieldUpdate(out_alias, value))
     return [p for p in plans.values() if p.updates]
+
+
+def plan_media(
+    client: BackendClient,
+    configured: list[ConfiguredOp],
+    notes: list[NoteFields],
+) -> list[MediaPlan]:
+    """Fetch media for each :class:`MediaOperation` over the notes it applies to.
+
+    The background (IO-bound) half of a media op: one batched backend call per
+    op, skipping notes that miss a required input or - when ``only_if_empty`` is
+    set - already have a populated target field. Returns one :class:`MediaPlan`
+    per (note, fetched file); the wiring layer saves the bytes into the media
+    folder and renders the field value on the UI thread. Non-media ops are
+    ignored, so this is safe to call with a pipeline's full op list.
+    """
+    plans: list[MediaPlan] = []
+    for item in configured:
+        op = item.operation
+        if not isinstance(op, MediaOperation):
+            continue
+        outputs = op.io_spec(item.params).outputs
+        if not outputs:
+            continue
+        out_alias = outputs[0]
+        only_if_empty = bool(item.params.get("only_if_empty", False))
+        applicable = [
+            n
+            for n in notes
+            if op.applicable(n.fields, item.params)
+            and not (only_if_empty and n.fields.get(out_alias))
+        ]
+        if not applicable:
+            continue
+        results = op.fetch(client, [n.fields for n in applicable])
+        for note, result in zip(applicable, results, strict=True):
+            if result is not None:
+                plans.append(
+                    MediaPlan(note_id=note.note_id, op=op, result=result, params=item.params)
+                )
+    return plans
