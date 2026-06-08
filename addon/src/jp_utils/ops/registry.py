@@ -7,6 +7,7 @@ layer (runner, Pipelines tab) to iterate. Grows one operation at a time.
 from .base import Operation
 from .frequency import FrequencyOperation
 from .int_sort import IntSortOperation
+from .nplus1 import Nplus1SequenceOperation
 from .sentence_furigana import SentenceFuriganaOperation
 from .word_audio import WordAudioOperation
 from .word_definition import WordDefinitionOperation
@@ -20,5 +21,6 @@ ALL_OPERATIONS: list[Operation] = [
     WordDefinitionOperation(),
     FrequencyOperation(),
     WordAudioOperation(),
+    Nplus1SequenceOperation(),
     IntSortOperation(),
 ]
