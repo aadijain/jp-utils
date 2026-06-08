@@ -16,8 +16,9 @@ Two layers:
   the Lapis note type only SEEDS defaults, and everything stays user-overridable.
 * **pipelines** - an ordered list of operations bound to a ``(deck, note type)``.
   Two decks can share a note type (both Lapis) yet need different operations, so
-  pipelines key on the pair, not the note type alone. A blank deck matches any
-  deck of that note type.
+  pipelines key on the pair, not the note type alone. A pipeline is runnable only
+  when it names BOTH a deck and a note type and that pair is unique (see
+  :func:`pipeline_problems`); there is no blank-deck "any deck" fallback.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -80,7 +81,8 @@ class PipelineStep:
 class Pipeline:
     """An ordered list of operations for a ``(deck, note type)``.
 
-    ``deck`` blank means "any deck of this note type". ``enabled`` toggles the
+    Both ``deck`` and ``note_type`` must be set, and the pair unique, for the
+    pipeline to be runnable (:func:`pipeline_problems`). ``enabled`` toggles the
     whole pipeline. Operations are added explicitly, so there is no per-step
     enable flag - a step present in ``steps`` runs.
     """
@@ -183,20 +185,107 @@ class AddonConfig:
 
 
 def find_pipeline(pipelines: list[Pipeline], deck: str, note_type: str) -> Pipeline | None:
-    """The enabled pipeline that applies to a note in ``deck`` of ``note_type``.
+    """The enabled pipeline targeting exactly this ``(deck, note_type)``.
 
-    An exact-deck pipeline wins; a blank-deck pipeline (matches any deck of that
-    note type) is the fallback. Returns ``None`` when nothing matches.
+    A pipeline must name both a (non-blank) deck and note type to be runnable, so
+    there is no blank-deck "any deck" fallback. Returns the first enabled exact
+    match (the settings dialog flags duplicate targets), or ``None``.
     """
-    blank: Pipeline | None = None
     for pipeline in pipelines:
-        if not pipeline.enabled or pipeline.note_type != note_type:
-            continue
-        if pipeline.deck == deck:
+        if (
+            pipeline.enabled
+            and pipeline.deck
+            and pipeline.note_type
+            and pipeline.deck == deck
+            and pipeline.note_type == note_type
+        ):
             return pipeline
-        if pipeline.deck == "" and blank is None:
-            blank = pipeline
-    return blank
+    return None
+
+
+def _mapped_aliases(note_types: dict, note_type: str) -> set[str]:
+    """The aliases that resolve to a non-empty field for a note type."""
+    mapping = note_types.get(note_type, {})
+    return {alias for alias, fld in mapping.items() if fld}
+
+
+def _op_required_aliases(op: Any, step: PipelineStep) -> tuple[list[str], list[str]]:
+    """``(required_inputs, outputs)`` an op needs for ``step``'s params.
+
+    Resolved through the op's :meth:`io_spec` when it has one (so a param-driven
+    target is validated against the chosen field), falling back to the static
+    ``input_aliases`` / ``output_alias`` attributes for plain duck-typed ops.
+    OPTIONAL inputs are deliberately excluded - they're never required to be mapped.
+    """
+    io_spec = getattr(op, "io_spec", None)
+    if callable(io_spec):
+        params = {spec.key: spec.default for spec in getattr(op, "params_spec", ())}
+        params.update(step.params or {})
+        spec: Any = io_spec(params)
+        return [str(a) for a in spec.required_inputs], [str(a) for a in spec.outputs]
+    inputs = [str(a) for a in getattr(op, "input_aliases", ())]
+    output = getattr(op, "output_alias", None)  # sort/generate/status ops write no field
+    return inputs, ([str(output)] if output else [])
+
+
+def step_unmapped_aliases(
+    step: PipelineStep, note_types: dict, note_type: str, operations
+) -> list[str]:
+    """Aliases a step's operation REQUIRES that aren't mapped for ``note_type``.
+
+    An unmapped required input makes the op skip the note (``Operation.applicable``);
+    an unmapped output makes the write a no-op (``apply_plan``). Either way the op
+    silently does nothing, so both are surfaced. OPTIONAL inputs are not flagged (the
+    op tolerates their absence). ``operations`` is the op registry (duck-typed:
+    ``key`` + an ``io_spec`` or the static ``input_aliases`` / ``output_alias``),
+    injected so this module stays decoupled from :mod:`jp_utils.ops`. An unregistered
+    op contributes nothing here.
+    """
+    op = next((o for o in operations if o.key == step.op), None)
+    if op is None:
+        return []
+    mapped = _mapped_aliases(note_types, note_type)
+    required_inputs, outputs = _op_required_aliases(op, step)
+    return [alias for alias in (*required_inputs, *outputs) if alias not in mapped]
+
+
+def pipeline_problems(
+    pipeline: Pipeline, all_pipelines: list[Pipeline], note_types: dict, operations
+) -> list[str]:
+    """Human-readable reasons a pipeline isn't valid/runnable (empty = valid).
+
+    Checks, in order: a deck is set, a note type is set, the ``(deck, note_type)``
+    pair is unique across ``all_pipelines``, and every alias the pipeline's ops
+    read/write is mapped for the note type. ``operations`` is the op registry
+    (see :func:`step_unmapped_aliases`).
+    """
+    problems: list[str] = []
+    if not pipeline.deck:
+        problems.append("Set a deck.")
+    if not pipeline.note_type:
+        problems.append("Set a note type.")
+    if (
+        pipeline.deck
+        and pipeline.note_type
+        and any(
+            other is not pipeline
+            and other.deck == pipeline.deck
+            and other.note_type == pipeline.note_type
+            for other in all_pipelines
+        )
+    ):
+        problems.append("Another pipeline already targets this deck + note type.")
+    if pipeline.note_type:
+        unmapped = sorted(
+            {
+                alias
+                for step in pipeline.steps
+                for alias in step_unmapped_aliases(step, note_types, pipeline.note_type, operations)
+            }
+        )
+        if unmapped:
+            problems.append(f"Unmapped fields for this note type: {', '.join(unmapped)}.")
+    return problems
 
 
 def load(mw) -> AddonConfig:
