@@ -10,6 +10,7 @@
       "sentence-furigana": "SentenceFurigana",
       "definition": "MainDefinition",
       "frequency": "FreqSort",
+      "word-audio": "ExpressionAudio",
       "rank": "FreqSort"
     }
   },
