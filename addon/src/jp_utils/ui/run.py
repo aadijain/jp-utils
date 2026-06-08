@@ -43,15 +43,21 @@ def _note_deck(mw, note) -> str:
     return mw.col.decks.name(cards[0].did) if cards else ""
 
 
-def run_pipeline(mw, note_ids, parent, config: AddonConfig | None = None, on_applied=None) -> None:
+def run_pipeline(
+    mw, note_ids, parent, config: AddonConfig | None = None, on_applied=None, silent: bool = False
+) -> None:
     """Run the matching pipeline over each note in ``note_ids``.
 
     ``config`` defaults to the saved add-on config; pass an in-memory config to
     run with unsaved settings. ``on_applied`` (optional) is called on the UI
-    thread once the writes land (e.g. to refresh a Browser view).
+    thread once the writes land (e.g. to refresh a Browser view). ``silent``
+    suppresses the modal "nothing matched" / failure dialogs (used by the
+    lifecycle auto-run so a quiet startup sweep never interrupts the user); the
+    non-blocking success tooltip still shows.
     """
     if not note_ids:
-        tooltip("No notes to process.", parent=parent)
+        if not silent:
+            tooltip("No notes to process.", parent=parent)
         return
     if config is None:
         config = load(mw)
@@ -81,7 +87,8 @@ def run_pipeline(mw, note_ids, parent, config: AddonConfig | None = None, on_app
 
     work = [g for g in groups.values() if g.ops and g.notes]
     if not work:
-        _warn_nothing(parent, skipped_no_pipeline, skipped_no_mapping)
+        if not silent:
+            _warn_nothing(parent, skipped_no_pipeline, skipped_no_mapping)
         return
 
     client = BackendClient(config.server_url, config.token)
@@ -96,12 +103,12 @@ def run_pipeline(mw, note_ids, parent, config: AddonConfig | None = None, on_app
         try:
             plans = future.result()
         except BackendError as exc:
-            showWarning(f"Pipeline failed: {exc.message}", parent=parent)
+            _report_failure(parent, exc.message, silent)
             return
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-            showWarning(f"Pipeline failed: {exc}", parent=parent)
+            _report_failure(parent, str(exc), silent)
             return
-        _apply_plans(mw, plans, note_type_of, config, parent, on_applied)
+        _apply_plans(mw, plans, note_type_of, config, parent, on_applied, silent)
 
     mw.taskman.run_in_background(task, on_done)
 
@@ -121,7 +128,17 @@ def _warn_nothing(parent, skipped_no_pipeline: int, skipped_no_mapping: int) -> 
         )
 
 
-def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig, parent, on_applied):
+def _report_failure(parent, message: str, silent: bool) -> None:
+    """Surface a pipeline failure: modal for manual runs, non-blocking when silent."""
+    if silent:
+        tooltip(f"jp-utils pipeline failed: {message}", parent=parent)
+    else:
+        showWarning(f"Pipeline failed: {message}", parent=parent)
+
+
+def _apply_plans(
+    mw, plans, note_type_of: dict[int, str], config: AddonConfig, parent, on_applied, silent=False
+):
     """Write the planned updates back onto the notes (UI thread)."""
     updated = []
     changed_fields = 0
@@ -142,5 +159,5 @@ def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig, p
         if on_applied is not None:
             on_applied()
         tooltip(f"Updated {len(updated)} note(s), {changed_fields} field(s).", parent=parent)
-    else:
+    elif not silent:
         tooltip("Nothing to update (already up to date).", parent=parent)

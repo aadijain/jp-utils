@@ -6,6 +6,7 @@ from jp_utils.config import (
     PipelineStep,
     find_pipeline,
     pipeline_problems,
+    pipelines_for_trigger,
     step_unmapped_aliases,
 )
 
@@ -72,6 +73,31 @@ def test_normalize_pipelines_drops_entries_without_note_type() -> None:
     )
     assert [(p.deck, p.note_type) for p in cfg.pipelines] == [("D", "N")]
     assert cfg.pipelines[0].steps[0].op == "x"
+
+
+def test_normalize_triggers_keeps_known_dedups_drops_junk() -> None:
+    cfg = AddonConfig.from_dict(
+        {"pipelines": [{"note_type": "N", "auto_triggers": ["bogus", "start", "close", "start"]}]}
+    )
+    # Only the known `start` survives, deduped; unknown keys (incl. the dropped
+    # `close` event) are gone.
+    assert cfg.pipelines[0].auto_triggers == ["start"]
+
+
+def test_auto_triggers_default_empty_and_round_trip() -> None:
+    assert Pipeline(deck="D", note_type="N").auto_triggers == []
+    cfg = AddonConfig(pipelines=[Pipeline("D", "N", auto_triggers=["start"])])
+    assert AddonConfig.from_dict(cfg.to_dict()) == cfg
+
+
+def test_pipelines_for_trigger_filters_by_event_enabled_and_target() -> None:
+    pipelines = [
+        Pipeline("D1", "N", auto_triggers=["start"]),
+        Pipeline("D2", "N", enabled=False, auto_triggers=["start"]),  # disabled
+        Pipeline("", "N", auto_triggers=["start"]),  # no deck -> not runnable
+        Pipeline("D4", "N"),  # no trigger
+    ]
+    assert [p.deck for p in pipelines_for_trigger(pipelines, "start")] == ["D1"]
 
 
 def test_normalize_steps_drops_junk_and_keeps_params() -> None:

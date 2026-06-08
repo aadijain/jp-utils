@@ -58,6 +58,15 @@ DEFAULT_FIELDS: dict[str, str] = {
 # Pipelines are NOT seeded - the user creates them in the settings dialog.
 _SEED_NOTE_TYPE = "Lapis"
 
+# Anki-lifecycle events a pipeline may opt into auto-running on (per-pipeline, not
+# global - each pipeline decides). The lifecycle layer (ui/auto.py) fires these;
+# label is shown in the Pipelines editor. Order = UI order. Only `start` is wired:
+# a close hook is best-effort (Anki doesn't await background work at shutdown), so
+# enrichment relies on the self-healing start sweep instead.
+AUTO_TRIGGER_START = "start"
+AUTO_TRIGGERS: tuple[tuple[str, str], ...] = ((AUTO_TRIGGER_START, "Run on Anki start"),)
+_VALID_TRIGGERS = frozenset(key for key, _ in AUTO_TRIGGERS)
+
 
 def _default_note_types() -> dict[str, dict[str, str]]:
     return {_SEED_NOTE_TYPE: dict(DEFAULT_FIELDS)}
@@ -84,13 +93,16 @@ class Pipeline:
     Both ``deck`` and ``note_type`` must be set, and the pair unique, for the
     pipeline to be runnable (:func:`pipeline_problems`). ``enabled`` toggles the
     whole pipeline. Operations are added explicitly, so there is no per-step
-    enable flag - a step present in ``steps`` runs.
+    enable flag - a step present in ``steps`` runs. ``auto_triggers`` lists the
+    lifecycle events (subset of :data:`AUTO_TRIGGERS` keys) this pipeline
+    auto-runs on; empty = manual-only.
     """
 
     deck: str
     note_type: str
     enabled: bool = True
     steps: list[PipelineStep] = field(default_factory=list)
+    auto_triggers: list[str] = field(default_factory=list)
 
 
 def _normalize_note_types(value) -> dict[str, dict[str, str]]:
@@ -137,6 +149,17 @@ def _normalize_steps(value) -> list[PipelineStep]:
     return steps
 
 
+def _normalize_triggers(value) -> list[str]:
+    """Keep only known trigger keys, deduped, in first-seen order (drop junk)."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if item in _VALID_TRIGGERS and item not in out:
+            out.append(item)
+    return out
+
+
 def _normalize_pipelines(value) -> list[Pipeline]:
     """Coerce stored pipelines to a list of :class:`Pipeline` (drop junk).
 
@@ -155,6 +178,7 @@ def _normalize_pipelines(value) -> list[Pipeline]:
                 note_type=str(item["note_type"]),
                 enabled=bool(item.get("enabled", True)),
                 steps=_normalize_steps(item.get("steps")),
+                auto_triggers=_normalize_triggers(item.get("auto_triggers")),
             )
         )
     return pipelines
@@ -201,6 +225,17 @@ def find_pipeline(pipelines: list[Pipeline], deck: str, note_type: str) -> Pipel
         ):
             return pipeline
     return None
+
+
+def pipelines_for_trigger(pipelines: list[Pipeline], event: str) -> list[Pipeline]:
+    """Enabled, fully-targeted pipelines that opted into ``event`` (preserves order).
+
+    Validity beyond deck/note_type (unmapped aliases) is NOT filtered here: the
+    runner skips silently via the ops' own applicability, matching manual runs.
+    """
+    return [
+        p for p in pipelines if p.enabled and p.deck and p.note_type and event in p.auto_triggers
+    ]
 
 
 def _mapped_aliases(note_types: dict, note_type: str) -> set[str]:
