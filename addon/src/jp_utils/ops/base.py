@@ -139,6 +139,7 @@ class GenerationResult:
 
     note_id: int
     op: "GenerateOperation"
+    params: dict
     words: list[dict]
 
 
@@ -472,5 +473,7 @@ def plan_generation(
         per_note = op.generate(client, [n.fields for n in applicable])
         for note, words in zip(applicable, per_note, strict=True):
             if words:
-                plans.append(GenerationResult(note_id=note.note_id, op=op, words=words))
+                plans.append(
+                    GenerationResult(note_id=note.note_id, op=op, params=item.params, words=words)
+                )
     return plans

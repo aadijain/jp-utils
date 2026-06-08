@@ -19,13 +19,16 @@ from aqt.utils import showInfo, showWarning, tooltip
 
 from ..client import BackendClient, BackendError
 from ..config import AddonConfig, find_pipeline, load
+from ..generation import context_aliases
 from ..ops import (
     ALL_OPERATIONS,
     ConfiguredOp,
     FieldOperation,
+    GenerateOperation,
     MediaOperation,
     NoteFields,
     SortOperation,
+    plan_generation,
     plan_media,
     plan_operations,
     resolve_pipeline_steps,
@@ -42,17 +45,36 @@ class _RunGroup:
     field_ops: list[ConfiguredOp] = field(default_factory=list)
     media_ops: list[ConfiguredOp] = field(default_factory=list)
     sort_ops: list[ConfiguredOp] = field(default_factory=list)
+    gen_ops: list[ConfiguredOp] = field(default_factory=list)
     notes: list[NoteFields] = field(default_factory=list)
+    gen_sources: list[NoteFields] = field(default_factory=list)
 
     @property
     def has_ops(self) -> bool:
-        return bool(self.field_ops or self.media_ops or self.sort_ops)
+        return bool(self.field_ops or self.media_ops or self.sort_ops or self.gen_ops)
 
 
 def _note_deck(mw, note) -> str:
     """The deck name of a note's first card ("" if it somehow has none)."""
     cards = note.cards()
     return mw.col.decks.name(cards[0].did) if cards else ""
+
+
+def _gen_source_notes(mw, group: _RunGroup, config: AddonConfig) -> list:
+    """Snapshot the group's reviewed (-is:new) source notes for its generate ops.
+
+    Generation reads every reviewed sentence in the (deck, note type), not just the
+    passed subset, so the first start-sweep backfills history; new cards are skipped
+    until first reviewed. Returns alias-keyed views (empty if the type is unmapped).
+    """
+    mapping = config.note_types.get(group.note_type)
+    if not mapping:
+        return []
+    query = f'deck:"{group.deck}" note:"{group.note_type}" -is:new'
+    return [
+        to_note_fields(int(nid), dict(mw.col.get_note(nid).items()), mapping)
+        for nid in mw.col.find_notes(query)
+    ]
 
 
 def run_pipeline(
@@ -99,9 +121,16 @@ def run_pipeline(
                 field_ops=[c for c in resolved if isinstance(c.operation, FieldOperation)],
                 media_ops=[c for c in resolved if isinstance(c.operation, MediaOperation)],
                 sort_ops=[c for c in resolved if isinstance(c.operation, SortOperation)],
+                gen_ops=[c for c in resolved if isinstance(c.operation, GenerateOperation)],
             )
         groups[key].notes.append(to_note_fields(int(nid), dict(note.items()), mapping))
         note_type_of[int(nid)] = note_type
+
+    # A generate op runs over the deck's own reviewed (-is:new) sentences, not the
+    # passed subset (like a sort op re-queries its deck), so gather those here.
+    for group in groups.values():
+        if group.gen_ops:
+            group.gen_sources = _gen_source_notes(mw, group, config)
 
     work = [g for g in groups.values() if g.has_ops and g.notes]
     if not work:
@@ -111,22 +140,24 @@ def run_pipeline(
 
     client = BackendClient(config.server_url, config.token)
 
-    def task() -> tuple[list, list]:
-        # The IO-bound backend work runs here: field ops compute their values and
-        # media ops fetch their bytes. Sort ops and the actual media attach run on
-        # the UI thread afterwards (sorts so they see fresh frequency values; media
-        # because writing to mw.col.media is an Anki collection write).
-        plans, media_plans = [], []
+    def task() -> tuple[list, list, list]:
+        # The IO-bound backend work runs here: field ops compute their values, media
+        # ops fetch their bytes, and generate ops compute their new words. The actual
+        # writes (field, media attach, sort reposition, note creation) all run on the
+        # UI thread afterwards (Anki collection writes / they need fresh values).
+        plans, media_plans, gen_results = [], [], []
         for group in work:
             if group.field_ops:
                 plans.extend(plan_operations(client, group.field_ops, group.notes))
             if group.media_ops:
                 media_plans.extend(plan_media(client, group.media_ops, group.notes))
-        return plans, media_plans
+            if group.gen_ops:
+                gen_results.extend(plan_generation(client, group.gen_ops, group.gen_sources))
+        return plans, media_plans, gen_results
 
     def on_done(future) -> None:
         try:
-            plans, media_plans = future.result()
+            plans, media_plans, gen_results = future.result()
         except BackendError as exc:
             _report_failure(parent, exc.message, silent)
             return
@@ -137,14 +168,15 @@ def run_pipeline(
         try:
             m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config)
             n_cards = _apply_sorts(mw, work, config)
-        except Exception as exc:  # noqa: BLE001 - surface a media/reposition failure
+            n_created = _apply_generation(mw, gen_results, config)
+        except Exception as exc:  # noqa: BLE001 - surface a media/reposition/create failure
             _report_failure(parent, str(exc), silent)
             return
         n_notes += m_notes
         n_fields += m_fields
-        if on_applied is not None and (n_notes or n_cards):
+        if on_applied is not None and (n_notes or n_cards or n_created):
             on_applied()
-        _report_done(parent, n_notes, n_fields, n_cards, silent)
+        _report_done(parent, n_notes, n_fields, n_cards, n_created, silent)
 
     mw.taskman.run_in_background(task, on_done)
 
@@ -275,12 +307,108 @@ def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: d
     return len(ordered_cids)
 
 
-def _report_done(parent, n_notes: int, n_fields: int, n_cards: int, silent: bool) -> None:
+def _apply_generation(mw, gen_results: list, config: AddonConfig) -> int:
+    """Create a target-deck note per new word (UI thread); return cards created.
+
+    Dedups by ``(word, word-reading)`` note existence in the target deck (homographs
+    with different readings stay distinct); on a hit ``on_existing`` chooses skip
+    (default) or overwrite. Each note seeds ``word`` + ``word-reading`` and copies
+    the context fields mapped on both note types (see :mod:`jp_utils.generation`);
+    enrichment/sort/status are left to the existing pipelines + the start-sweep.
+    """
+    # Group by target so the existing-note index is built once per (deck, note type).
+    by_target: dict[tuple[str, str], list] = {}
+    for result in gen_results:
+        target = (result.params.get("target_deck", ""), result.params.get("target_note_type", ""))
+        by_target.setdefault(target, []).append(result)
+
+    created = 0
+    for (deck, note_type), results in by_target.items():
+        target_mapping = config.note_types.get(note_type)
+        model = mw.col.models.by_name(note_type) if note_type else None
+        word_field = target_mapping.get("word") if target_mapping else None
+        if not deck or not target_mapping or model is None or not word_field:
+            continue  # misconfigured target: no-op rather than create stray notes
+
+        reading_field = target_mapping.get("word-reading")
+        deck_id = mw.col.decks.id(deck)
+        existing = _existing_word_index(mw, deck, note_type, word_field, reading_field)
+
+        to_save = []
+        for result in results:
+            on_existing = result.params.get("on_existing", "skip")
+            src_note = mw.col.get_note(NoteId(result.note_id))
+            src_type = src_note.note_type()["name"]
+            src_mapping = config.note_types.get(src_type, {})
+            copy = context_aliases(src_mapping, target_mapping)
+            src_fields = to_note_fields(result.note_id, dict(src_note.items()), src_mapping).fields
+
+            for word in result.words:
+                lemma = word.get("lemma", "")
+                reading = word.get("reading", "")
+                if not lemma:
+                    continue
+                # Dedup on (word, word-reading) - homographs with distinct readings
+                # stay separate cards; drop the reading when the target can't store it
+                # so both sides of the match agree. `duplicate` skips the check entirely.
+                key = (lemma, reading if reading_field else "")
+                if on_existing != "duplicate" and key in existing:
+                    if on_existing == "overwrite":
+                        note = mw.col.get_note(existing[key])
+                        if _fill_note(note, target_mapping, copy, reading, src_fields):
+                            to_save.append(note)
+                    continue
+                note = mw.col.new_note(model)
+                note[word_field] = lemma
+                _fill_note(note, target_mapping, copy, reading, src_fields)
+                mw.col.add_note(note, deck_id)
+                existing[key] = note.id
+                created += 1
+
+        if to_save:
+            mw.col.update_notes(to_save)
+    return created
+
+
+def _fill_note(note, mapping: dict, copy: list, reading: str, src_fields: dict) -> bool:
+    """Seed word-reading + copy context onto ``note``; return True if anything changed."""
+    changed = False
+    reading_field = mapping.get("word-reading")
+    if reading_field and reading_field in note and note[reading_field] != reading:
+        note[reading_field] = reading
+        changed = True
+    for alias in copy:
+        field = mapping.get(alias)
+        value = src_fields.get(alias, "")
+        if field and field in note and note[field] != value:
+            note[field] = value
+            changed = True
+    return changed
+
+
+def _existing_word_index(
+    mw, deck: str, note_type: str, word_field: str, reading_field: str | None
+) -> dict[tuple[str, str], object]:
+    """Map ``(word, word-reading)`` -> note id for the target deck's existing notes."""
+    index: dict[tuple[str, str], object] = {}
+    for nid in mw.col.find_notes(f'deck:"{deck}" note:"{note_type}"'):
+        note = mw.col.get_note(nid)
+        word = note[word_field] if word_field in note else ""
+        reading = note[reading_field] if reading_field and reading_field in note else ""
+        index[(word, reading)] = nid
+    return index
+
+
+def _report_done(
+    parent, n_notes: int, n_fields: int, n_cards: int, n_created: int, silent: bool
+) -> None:
     parts = []
     if n_notes:
         parts.append(f"updated {n_notes} note(s), {n_fields} field(s)")
     if n_cards:
         parts.append(f"reordered {n_cards} card(s)")
+    if n_created:
+        parts.append(f"created {n_created} card(s)")
     if parts:
         tooltip("jp-utils: " + ", ".join(parts) + ".", parent=parent)
     elif not silent:
