@@ -1,6 +1,10 @@
-"""Tests for the word-definition operation (request shape + gloss formatting)."""
+"""Tests for the word-definition operation (request shape + sense formatting)."""
 
-from jp_utils.ops.word_definition import WordDefinitionOperation
+from jp_utils.ops.word_definition import (
+    FORMAT_COMPRESSED,
+    FORMAT_EXPANDED,
+    WordDefinitionOperation,
+)
 
 
 class _FakeClient:
@@ -13,42 +17,124 @@ class _FakeClient:
         return self.response
 
 
-def test_builds_lemma_queries_and_bullets_glosses():
-    client = _FakeClient(
+# One headword with two senses; sense 1 has POS + an example, sense 2 is plain.
+_RESULT = {
+    "results": [
         {
-            "results": [
-                {"entries": [{"glosses": ["cat"]}, {"glosses": ["tomcat", "puss"]}]},
-                {"entries": []},
-            ]
+            "lemma": "猫",
+            "all_readings": ["ねこ", "びょう"],
+            "entries": [
+                {
+                    "senses": [
+                        {
+                            "pos": ["noun"],
+                            "glosses": ["cat"],
+                            "examples": [{"ja": "猫がいる", "en": "there is a cat"}],
+                        },
+                        {"pos": ["noun"], "glosses": ["tomcat", "puss"], "examples": []},
+                    ],
+                }
+            ],
         }
+    ]
+}
+
+
+def _run(params, result=_RESULT):
+    return WordDefinitionOperation().compute(
+        _FakeClient(result), [{"word": "猫", "word-reading": "ねこ"}], params
     )
-    out = WordDefinitionOperation().compute(
-        client, [{"word": "猫", "word-reading": "ねこ"}, {"word": "zzz", "word-reading": "zzz"}]
+
+
+def test_builds_lemma_queries():
+    client = _FakeClient(_RESULT)
+    WordDefinitionOperation().compute(
+        client, [{"word": "猫", "word-reading": "ねこ"}], {"format": FORMAT_COMPRESSED}
     )
-    assert out == ["<ul><li>cat</li><li>tomcat</li><li>puss</li></ul>", None]
-    assert client.calls == [
-        (
-            "/v1/text/meaning",
-            {"queries": [{"lemma": "猫", "reading": "ねこ"}, {"lemma": "zzz", "reading": "zzz"}]},
-        )
+    assert client.calls == [("/v1/text/meaning", {"queries": [{"lemma": "猫", "reading": "ねこ"}]})]
+
+
+def test_compressed_joins_glosses_per_sense():
+    assert _run({"format": FORMAT_COMPRESSED}) == ["<ol><li>cat</li><li>tomcat; puss</li></ol>"]
+
+
+def test_expanded_one_bullet_per_gloss():
+    assert _run({"format": FORMAT_EXPANDED}) == [
+        "<ol><li><ul><li>cat</li></ul></li><li><ul><li>tomcat</li><li>puss</li></ul></li></ol>"
     ]
 
 
-def test_empty_glosses_leave_field_unchanged():
-    out = WordDefinitionOperation().compute(
-        _FakeClient({"results": [{"entries": [{"glosses": []}]}]}),
-        [{"word": "猫", "word-reading": "ねこ"}],
-    )
-    assert out == [None]
+def test_default_format_is_expanded():
+    assert _run({}) == _run({"format": FORMAT_EXPANDED})
+
+
+def test_include_pos_prefixes_each_sense():
+    assert _run({"format": FORMAT_COMPRESSED, "include_pos": True}) == [
+        "<ol><li>[noun] cat</li><li>[noun] tomcat; puss</li></ol>"
+    ]
+
+
+def test_include_examples_renders_one_per_sense():
+    assert _run({"format": FORMAT_COMPRESSED, "include_examples": True}) == [
+        "<ol><li>cat<div>猫がいる</div><div>there is a cat</div></li><li>tomcat; puss</li></ol>"
+    ]
+
+
+def test_readings_trail_with_word_label():
+    assert _run({"format": FORMAT_COMPRESSED, "include_readings": True}) == [
+        "<ol><li>cat</li><li>tomcat; puss</li></ol><div>猫 readings: ねこ, びょう</div>"
+    ]
+
+
+_SINGLE = {
+    "results": [
+        {
+            "lemma": "猫",
+            "all_readings": ["ねこ"],
+            "entries": [{"senses": [{"pos": ["noun"], "glosses": ["cat"], "examples": []}]}],
+        }
+    ]
+}
+
+
+def test_single_sense_compressed_still_in_ol():
+    assert _run({"format": FORMAT_COMPRESSED}, _SINGLE) == ["<ol><li>cat</li></ol>"]
+
+
+def test_single_sense_expanded_still_in_ol():
+    assert _run({"format": FORMAT_EXPANDED}, _SINGLE) == ["<ol><li><ul><li>cat</li></ul></li></ol>"]
+
+
+def test_single_sense_keeps_pos_and_readings():
+    assert _run({"include_pos": True, "include_readings": True}, _SINGLE) == [
+        "<ol><li>[noun] <ul><li>cat</li></ul></li></ol><div>猫 readings: ねこ</div>"
+    ]
+
+
+def test_no_senses_leaves_field_unchanged():
+    result = {"results": [{"all_readings": [], "entries": [{"senses": []}]}]}
+    assert _run({"format": FORMAT_COMPRESSED}, result) == [None]
 
 
 def test_glosses_are_html_escaped():
     # Real jitendex glosses contain raw markup characters ("less-than mark (<)");
     # they must land in the field as entities, not as broken HTML.
-    out = WordDefinitionOperation().compute(
-        _FakeClient({"results": [{"entries": [{"glosses": ["less-than mark (<)", "S&M"]}]}]}),
-        [{"word": "小なり", "word-reading": "しょうなり"}],
-    )
+    result = {
+        "results": [
+            {
+                "lemma": "小なり",
+                "all_readings": [],
+                "entries": [
+                    {
+                        "senses": [
+                            {"pos": [], "glosses": ["less-than mark (<)", "S&M"], "examples": []}
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    out = _run({}, result)
     assert "less-than mark (&lt;)" in out[0]
     assert "S&amp;M" in out[0]
 
