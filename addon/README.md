@@ -34,6 +34,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `word-definition` | Fetch definition | `word` | `definition` (sense-aware) |
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
+| `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 
 Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option.
