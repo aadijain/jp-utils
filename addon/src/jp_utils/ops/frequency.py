@@ -20,7 +20,9 @@ class FrequencyOperation(FieldOperation):
     input_aliases = ("word", "word-reading")
     output_alias = "frequency"
 
-    def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
+    def compute(
+        self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
+    ) -> list[str | None]:
         queries = [{"term": s["word"], "reading": s["word-reading"]} for s in sources]
         resp = client.post("/v1/text/frequency", {"queries": queries})
         results = resp.get("results", [])
