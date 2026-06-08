@@ -44,6 +44,12 @@ ALIASES: tuple[str, ...] = (
     "frequency",
     "word-audio",
     "rank",
+    # Sentence-context fields copied from a mined sentence onto a generated vocab
+    # card. Read from the source sentence note, written to the target word
+    # note - copied 1:1 by alias only when mapped on BOTH note types.
+    "sentence-audio",
+    "sentence-image",
+    "alt-definition",
 )
 
 # Default alias -> field map seeded for the Lapis mining note type (seed only;
@@ -59,6 +65,11 @@ DEFAULT_FIELDS: dict[str, str] = {
     "frequency": "FreqSort",
     "word-audio": "ExpressionAudio",
     "rank": "FreqSort",
+    # Copied-context targets on the generated Lapis word note. The sentence
+    # note type is NOT seeded (user maps it by hand); only the Lapis side here.
+    "sentence-audio": "SentenceAudio",
+    "sentence-image": "Picture",
+    "alt-definition": "Glossary",
 }
 
 # Seeded note type (user-overridable). Only the note-type STRING is Lapis-bound.
