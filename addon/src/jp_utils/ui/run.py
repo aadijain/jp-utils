@@ -17,7 +17,13 @@ from aqt.utils import showInfo, showWarning, tooltip
 
 from ..client import BackendClient, BackendError
 from ..config import AddonConfig, find_pipeline, load
-from ..ops import ALL_OPERATIONS, plan_operations, resolve_pipeline_steps
+from ..ops import (
+    ALL_OPERATIONS,
+    FieldOperation,
+    SortOperation,
+    plan_operations,
+    resolve_pipeline_steps,
+)
 from ..ops.notes import apply_plan, to_note_fields
 
 
@@ -64,12 +70,18 @@ def run_pipeline(
             continue
         key = id(pipeline)
         if key not in groups:
-            ops = resolve_pipeline_steps(pipeline.steps, ALL_OPERATIONS)
-            groups[key] = {"ops": ops, "notes": []}
+            resolved = resolve_pipeline_steps(pipeline.steps, ALL_OPERATIONS)
+            groups[key] = {
+                "field_ops": [c for c in resolved if isinstance(c.operation, FieldOperation)],
+                "sort_ops": [c for c in resolved if isinstance(c.operation, SortOperation)],
+                "notes": [],
+                "deck": pipeline.deck,
+                "note_type": note_type,
+            }
         groups[key]["notes"].append(to_note_fields(int(nid), dict(note.items()), mapping))
         note_type_of[int(nid)] = note_type
 
-    work = [g for g in groups.values() if g["ops"] and g["notes"]]
+    work = [g for g in groups.values() if (g["field_ops"] or g["sort_ops"]) and g["notes"]]
     if not work:
         if not silent:
             _warn_nothing(parent, skipped_no_pipeline, skipped_no_mapping)
@@ -78,9 +90,12 @@ def run_pipeline(
     client = BackendClient(config.server_url, config.token)
 
     def task() -> list:
+        # Only the field ops need the (slow, IO-bound) backend; sort ops run on the
+        # UI thread afterwards so they read the freshly-written frequency values.
         plans = []
         for group in work:
-            plans.extend(plan_operations(client, group["ops"], group["notes"]))
+            if group["field_ops"]:
+                plans.extend(plan_operations(client, group["field_ops"], group["notes"]))
         return plans
 
     def on_done(future) -> None:
@@ -92,7 +107,15 @@ def run_pipeline(
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             _report_failure(parent, str(exc), silent)
             return
-        _apply_plans(mw, plans, note_type_of, config, parent, on_applied, silent)
+        n_notes, n_fields = _apply_plans(mw, plans, note_type_of, config)
+        try:
+            n_cards = _apply_sorts(mw, work, config)
+        except Exception as exc:  # noqa: BLE001 - surface a reposition failure
+            _report_failure(parent, str(exc), silent)
+            return
+        if on_applied is not None and (n_notes or n_cards):
+            on_applied()
+        _report_done(parent, n_notes, n_fields, n_cards, silent)
 
     mw.taskman.run_in_background(task, on_done)
 
@@ -120,10 +143,12 @@ def _report_failure(parent, message: str, silent: bool) -> None:
         showWarning(f"Pipeline failed: {message}", parent=parent)
 
 
-def _apply_plans(
-    mw, plans, note_type_of: dict[int, str], config: AddonConfig, parent, on_applied, silent=False
-):
-    """Write the planned updates back onto the notes (UI thread)."""
+def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig) -> tuple[int, int]:
+    """Write the planned field updates back onto the notes (UI thread).
+
+    Returns ``(notes_updated, fields_changed)``; messaging is left to the caller
+    so field writes and sort reordering can be reported together.
+    """
     updated = []
     changed_fields = 0
     for plan in plans:
@@ -140,8 +165,55 @@ def _apply_plans(
 
     if updated:
         mw.col.update_notes(updated)
-        if on_applied is not None:
-            on_applied()
-        tooltip(f"Updated {len(updated)} note(s), {changed_fields} field(s).", parent=parent)
+    return len(updated), changed_fields
+
+
+def _apply_sorts(mw, work: list[dict], config: AddonConfig) -> int:
+    """Reposition each sort-pipeline group's new cards; return total cards moved."""
+    moved = 0
+    for group in work:
+        if not group["sort_ops"]:
+            continue
+        mapping = config.note_types.get(group["note_type"])
+        if not mapping:
+            continue
+        moved += _reorder_new_cards(
+            mw, group["deck"], group["note_type"], group["sort_ops"], mapping
+        )
+    return moved
+
+
+def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: dict) -> int:
+    """Order the (deck, note_type)'s NEW cards by the sort op(s) and reposition them.
+
+    Only new cards are touched (``is:new``); review/learning cards are
+    date-scheduled and left alone. With multiple sort ops the FIRST listed is the
+    primary key (applied as the outermost stable sort).
+    """
+    cids = list(mw.col.find_cards(f'deck:"{deck}" note:"{note_type}" is:new'))
+    if not cids:
+        return 0
+    cards = [mw.col.get_card(cid) for cid in cids]
+    sources = [to_note_fields(c.nid, dict(c.note().items()), mapping).fields for c in cards]
+
+    order = list(range(len(cards)))
+    for configured in reversed(sort_ops):
+        ranked = configured.operation.order([sources[i] for i in order], configured.params)
+        order = [order[p] for p in ranked]
+
+    ordered_cids = [cards[i].id for i in order]
+    # reposition_new_cards(card_ids, starting_from, step_size, randomize, shift_existing)
+    mw.col.sched.reposition_new_cards(ordered_cids, 1, 1, False, True)
+    return len(ordered_cids)
+
+
+def _report_done(parent, n_notes: int, n_fields: int, n_cards: int, silent: bool) -> None:
+    parts = []
+    if n_notes:
+        parts.append(f"updated {n_notes} note(s), {n_fields} field(s)")
+    if n_cards:
+        parts.append(f"reordered {n_cards} card(s)")
+    if parts:
+        tooltip("jp-utils: " + ", ".join(parts) + ".", parent=parent)
     elif not silent:
         tooltip("Nothing to update (already up to date).", parent=parent)

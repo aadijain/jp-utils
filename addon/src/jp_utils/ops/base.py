@@ -97,13 +97,19 @@ class NotePlan:
 
 
 class Operation(ABC):
-    """One field-deriving unit: reads ``input_aliases``, writes ``output_alias``."""
+    """Base contract for a pipeline step: a keyed unit that may read input aliases.
+
+    Subclassed two ways: :class:`FieldOperation` (computes and writes one output
+    field, e.g. furigana/definition/frequency) and :class:`SortOperation`
+    (reorders a deck's new cards by a per-note key, writes no field). The shared
+    surface is ``key`` / ``label`` / ``input_aliases`` / ``params_spec`` +
+    :meth:`applicable`; ``output_alias`` and ``compute`` belong to field ops only.
+    """
 
     key: str  # stable identifier (stored in a pipeline step)
     label: str  # human label (UI)
     input_aliases: tuple[str, ...] = ()  # required inputs (static default contract)
     optional_input_aliases: tuple[str, ...] = ()  # read-if-present, never gating
-    output_alias: str  # alias this operation writes
     params_spec: tuple[ParamSpec, ...] = ()  # the options this operation accepts
     # Shown in the I/O column when the op writes NO output field (sort/generate/
     # status ops set a verb here, e.g. "(reorder cards)").
@@ -150,6 +156,35 @@ class Operation(ABC):
         """
         return all(inputs.get(alias) for alias in self.io_spec(params).required_inputs)
 
+
+# Shared spec for field-writing operations: skip a note whose output field is
+# already populated. Not every operation has this (a sort op does not).
+ONLY_IF_EMPTY = ParamSpec(
+    "only_if_empty",
+    "Only fill empty fields",
+    "bool",
+    default=True,
+    description="Skip notes whose target field already has a value (never overwrite it).",
+)
+
+# Sort direction for sort operations. Ascending = lowest value first (e.g. the
+# most-frequent JPDB rank, which is the smallest number, comes first).
+DIRECTION = ParamSpec(
+    "direction",
+    "Direction",
+    "choice",
+    default="ascending",
+    choices=("ascending", "descending"),
+    description="Ascending orders by lowest value first (e.g. most-frequent word first).",
+)
+
+
+class FieldOperation(Operation, ABC):
+    """An operation that computes and writes one output field (only_if_empty flag)."""
+
+    output_alias: str  # alias this operation writes
+    params_spec = (ONLY_IF_EMPTY,)
+
     @abstractmethod
     def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
         """Batch-compute output values for ``sources`` (aligned in/out).
@@ -161,21 +196,39 @@ class Operation(ABC):
         """
 
 
-# Shared spec for field-writing operations: skip a note whose output field is
-# already populated. Not every operation has this (e.g. a sort op would not).
-ONLY_IF_EMPTY = ParamSpec(
-    "only_if_empty",
-    "Only fill empty fields",
-    "bool",
-    default=True,
-    description="Skip notes whose target field already has a value (never overwrite it).",
-)
+class SortOperation(Operation, ABC):
+    """An operation that reorders a deck's NEW cards by a per-note key (no field write).
 
+    The wiring layer collects each note's alias view, calls :meth:`order` to
+    rank them, and repositions only the new cards in that order (review/learning
+    cards are date-scheduled and left untouched). Notes whose key is ``None``
+    (missing/garbage) sort last regardless of direction.
+    """
 
-class FieldOperation(Operation, ABC):
-    """An operation that writes one output field; exposes the only_if_empty flag."""
+    params_spec = (DIRECTION,)
+    io_verb = "(reorder cards)"
 
-    params_spec = (ONLY_IF_EMPTY,)
+    @abstractmethod
+    def sort_value(self, inputs: dict[str, str], params: dict | None = None) -> Any | None:
+        """The comparable sort key for one note, or ``None`` if it has none.
+
+        ``params`` are the step's resolved options (spec defaults + stored
+        overrides), e.g. which field/alias to order by; ops that take none ignore it.
+        """
+
+    def order(self, sources: list[dict[str, str]], params: dict | None = None) -> list[int]:
+        """Indices of ``sources`` in sorted order; keyless notes kept last, stable.
+
+        ``params`` carries the step's options: ``direction`` (ascending/descending)
+        plus anything :meth:`sort_value` reads (passed through to it).
+        """
+        params = params or {}
+        descending = params.get("direction") == "descending"
+        keyed = [(i, self.sort_value(s, params)) for i, s in enumerate(sources)]
+        present = [(i, v) for i, v in keyed if v is not None]
+        present.sort(key=lambda iv: iv[1], reverse=descending)  # stable: ties keep input order
+        missing = [i for i, v in keyed if v is None]
+        return [i for i, _ in present] + missing
 
 
 def resolve_params(op: Operation, step_params: dict | None) -> dict:
@@ -225,6 +278,8 @@ def plan_operations(
     plans: dict[int, NotePlan] = {n.note_id: NotePlan(note_id=n.note_id) for n in notes}
     for item in configured:
         op = item.operation
+        if not isinstance(op, FieldOperation):  # sort ops are applied by the wiring layer
+            continue
         outputs = op.io_spec(item.params).outputs
         if not outputs:  # a field op with no resolved target writes nothing
             continue
