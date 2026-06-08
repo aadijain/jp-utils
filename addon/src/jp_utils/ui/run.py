@@ -23,8 +23,10 @@ from ..ops import (
     ALL_OPERATIONS,
     ConfiguredOp,
     FieldOperation,
+    MediaOperation,
     NoteFields,
     SortOperation,
+    plan_media,
     plan_operations,
     resolve_pipeline_steps,
 )
@@ -38,12 +40,13 @@ class _RunGroup:
     deck: str
     note_type: str
     field_ops: list[ConfiguredOp] = field(default_factory=list)
+    media_ops: list[ConfiguredOp] = field(default_factory=list)
     sort_ops: list[ConfiguredOp] = field(default_factory=list)
     notes: list[NoteFields] = field(default_factory=list)
 
     @property
     def has_ops(self) -> bool:
-        return bool(self.field_ops or self.sort_ops)
+        return bool(self.field_ops or self.media_ops or self.sort_ops)
 
 
 def _note_deck(mw, note) -> str:
@@ -94,6 +97,7 @@ def run_pipeline(
                 deck=pipeline.deck,
                 note_type=note_type,
                 field_ops=[c for c in resolved if isinstance(c.operation, FieldOperation)],
+                media_ops=[c for c in resolved if isinstance(c.operation, MediaOperation)],
                 sort_ops=[c for c in resolved if isinstance(c.operation, SortOperation)],
             )
         groups[key].notes.append(to_note_fields(int(nid), dict(note.items()), mapping))
@@ -107,18 +111,22 @@ def run_pipeline(
 
     client = BackendClient(config.server_url, config.token)
 
-    def task() -> list:
-        # Only the field ops need the (slow, IO-bound) backend; sort ops run on the
-        # UI thread afterwards so they read the freshly-written frequency values.
-        plans = []
+    def task() -> tuple[list, list]:
+        # The IO-bound backend work runs here: field ops compute their values and
+        # media ops fetch their bytes. Sort ops and the actual media attach run on
+        # the UI thread afterwards (sorts so they see fresh frequency values; media
+        # because writing to mw.col.media is an Anki collection write).
+        plans, media_plans = [], []
         for group in work:
             if group.field_ops:
                 plans.extend(plan_operations(client, group.field_ops, group.notes))
-        return plans
+            if group.media_ops:
+                media_plans.extend(plan_media(client, group.media_ops, group.notes))
+        return plans, media_plans
 
     def on_done(future) -> None:
         try:
-            plans = future.result()
+            plans, media_plans = future.result()
         except BackendError as exc:
             _report_failure(parent, exc.message, silent)
             return
@@ -127,10 +135,13 @@ def run_pipeline(
             return
         n_notes, n_fields = _apply_plans(mw, plans, note_type_of, config)
         try:
+            m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config)
             n_cards = _apply_sorts(mw, work, config)
-        except Exception as exc:  # noqa: BLE001 - surface a reposition failure
+        except Exception as exc:  # noqa: BLE001 - surface a media/reposition failure
             _report_failure(parent, str(exc), silent)
             return
+        n_notes += m_notes
+        n_fields += m_fields
         if on_applied is not None and (n_notes or n_cards):
             on_applied()
         _report_done(parent, n_notes, n_fields, n_cards, silent)
@@ -180,6 +191,47 @@ def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig) -
             note[name] = fields[name]
         updated.append(note)
         changed_fields += len(names)
+
+    if updated:
+        mw.col.update_notes(updated)
+    return len(updated), changed_fields
+
+
+def _apply_media(
+    mw, media_plans, note_type_of: dict[int, str], config: AddonConfig
+) -> tuple[int, int]:
+    """Attach each media plan's bytes to the collection and write its field (UI thread).
+
+    The bytes were fetched in the background; saving them to the media folder is a
+    collection write, so it must happen here. ``write_data`` returns the actual
+    (possibly de-duplicated) filename, which the op renders into the field value.
+    Like :func:`_apply_plans` it writes only when the value changed, so re-running
+    is idempotent. Returns ``(notes_updated, fields_changed)``.
+    """
+    # Group plans by note so each note is fetched and updated once.
+    by_note: dict[int, list] = {}
+    for plan in media_plans:
+        by_note.setdefault(plan.note_id, []).append(plan)
+
+    updated = []
+    changed_fields = 0
+    for note_id, plans in by_note.items():
+        note = mw.col.get_note(NoteId(note_id))
+        mapping = config.note_types[note_type_of[note_id]]
+        changed_here = 0
+        for plan in plans:
+            outputs = plan.op.io_spec(plan.params).outputs
+            field_name = mapping.get(outputs[0]) if outputs else None
+            if field_name is None or field_name not in note:
+                continue
+            filename = mw.col.media.write_data(plan.result.filename, plan.result.data)
+            value = plan.op.render(filename)
+            if note[field_name] != value:
+                note[field_name] = value
+                changed_here += 1
+        if changed_here:
+            updated.append(note)
+            changed_fields += changed_here
 
     if updated:
         mw.col.update_notes(updated)
