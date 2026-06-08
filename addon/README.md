@@ -18,7 +18,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 ## Concepts
 
-**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `definition`, `frequency`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
+**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `definition`, `frequency`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
 
 **Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
 
@@ -33,6 +33,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `sentence-furigana` | Add sentence furigana | `sentence` | `sentence-furigana` (HTML-aware) |
 | `word-definition` | Fetch definition | `word` | `definition` (sense-aware) |
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
+| `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 
 Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option.
 

@@ -9,7 +9,8 @@
       "word-furigana": "ExpressionFurigana",
       "sentence-furigana": "SentenceFurigana",
       "definition": "MainDefinition",
-      "frequency": "FreqSort"
+      "frequency": "FreqSort",
+      "rank": "FreqSort"
     }
   },
   "pipelines": []
