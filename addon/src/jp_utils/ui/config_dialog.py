@@ -28,6 +28,7 @@ from aqt.qt import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMenu,
     QPushButton,
     Qt,
@@ -40,7 +41,15 @@ from aqt.qt import (
 from aqt.utils import showInfo, showWarning, tooltip
 
 from ..client import BackendClient, BackendError
-from ..config import ALIASES, AddonConfig, Pipeline, PipelineStep, save
+from ..config import (
+    ALIASES,
+    AddonConfig,
+    Pipeline,
+    PipelineStep,
+    pipeline_problems,
+    save,
+    step_unmapped_aliases,
+)
 from ..ops import ALL_OPERATIONS, resolve_params
 from .params_dialog import ParamEditorDialog
 from .run import run_pipeline
@@ -69,19 +78,41 @@ class ConfigDialog(QDialog):
         self._pipelines = copy.deepcopy(config.pipelines)
         self._current_note_type: str | None = None
         self._current_pipeline_index: int | None = None
+        self._rendered_note_type: str | None = None  # note type the steps table was marked for
         self._loading = False  # suppress edit handlers during programmatic UI updates
 
         self.setWindowTitle("jp-utils Settings")
         self.setMinimumWidth(640)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_connection_tab(config), "Backend")
-        tabs.addTab(self._build_fields_tab(), "Field mappings")
-        tabs.addTab(self._build_pipelines_tab(), "Pipelines")
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._build_connection_tab(config), "Backend")
+        self._tabs.addTab(self._build_fields_tab(), "Field mappings")
+        self._pipelines_page = self._build_pipelines_tab()
+        self._tabs.addTab(self._pipelines_page, "Pipelines")
+        # Connect after building so construction doesn't fire it on a half-built UI.
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(tabs)
+        layout.addWidget(self._tabs)
         layout.addWidget(self._build_buttons())
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Keep cross-tab state coherent when switching tabs.
+
+        Field-mapping edits live in the Field mappings tab's table widgets until
+        captured; persist them so the Pipelines tab's unmapped-alias markers and
+        validity warnings reflect the latest mapping (otherwise a marker would go
+        stale until the operation is removed and re-added).
+        """
+        self._capture_tables()
+        if self._tabs.widget(index) is self._pipelines_page:
+            idx = self._current_pipeline_index
+            if idx is not None:
+                row = self._steps_table.currentRow()
+                self._render_steps_table(self._pipelines[idx])
+                if row >= 0:
+                    self._steps_table.selectRow(row)
+            self._revalidate()
 
     # ── Backend ────────────────────────────────────────────────────────────────
     def _build_connection_tab(self, config: AddonConfig) -> QWidget:
@@ -245,7 +276,8 @@ class ConfigDialog(QDialog):
         outer.addWidget(
             QLabel(
                 "A pipeline runs an ordered list of operations over the notes in a "
-                "deck. A blank deck matches any deck of the note type."
+                "deck. Each pipeline needs a deck and a note type, and the pair must "
+                "be unique, to be runnable."
             )
         )
         row = QHBoxLayout()
@@ -291,8 +323,15 @@ class ConfigDialog(QDialog):
         form.addRow("Note type", self._ptype_combo)
 
         self._enabled_check = QCheckBox("Enabled")
+        self._enabled_check.toggled.connect(self._on_enabled_toggled)
         form.addRow("", self._enabled_check)
         box.addLayout(form)
+
+        self._warning_label = QLabel("")
+        self._warning_label.setWordWrap(True)
+        self._warning_label.setStyleSheet("color: #c0392b;")  # surfaces validity problems
+        self._warning_label.setVisible(False)
+        box.addWidget(self._warning_label)
 
         box.addWidget(QLabel("<b>Operations</b> (run top to bottom)"))
         steps_row = QHBoxLayout()
@@ -354,20 +393,54 @@ class ConfigDialog(QDialog):
 
     @staticmethod
     def _pipeline_label(pipeline: Pipeline) -> str:
-        return f"{pipeline.deck or '(any deck)'} / {pipeline.note_type or '(no note type)'}"
+        return f"{pipeline.deck or '(no deck)'} / {pipeline.note_type or '(no note type)'}"
+
+    def _problems_of(self, pipeline: Pipeline) -> list[str]:
+        return pipeline_problems(pipeline, self._pipelines, self._note_types, ALL_OPERATIONS)
 
     def _refresh_list(self, select: int) -> None:
         """Rebuild the pipeline list and load ``select`` into the editor."""
         self._loading = True
         self._pipeline_list.clear()
         for pipeline in self._pipelines:
-            self._pipeline_list.addItem(self._pipeline_label(pipeline))
+            self._pipeline_list.addItem(QListWidgetItem(self._pipeline_label(pipeline)))
         valid = 0 <= select < len(self._pipelines)
         if valid:
             self._pipeline_list.setCurrentRow(select)
         self._loading = False
         self._current_pipeline_index = select if valid else None
         self._load_pipeline_editor()
+
+    def _refresh_list_markers(self) -> None:
+        """Re-mark every list item by status: ``⚠`` invalid, ``●`` enabled, ``○`` disabled.
+
+        Done across the whole list (not just the current row) because editing one
+        pipeline's target can make a *different* one a duplicate.
+        """
+        for i, pipeline in enumerate(self._pipelines):
+            item = self._pipeline_list.item(i)
+            if item is None:
+                continue
+            problems = self._problems_of(pipeline)
+            if problems:
+                prefix, tip = "⚠ ", "\n".join(problems)
+            elif pipeline.enabled:
+                prefix, tip = "● ", "Enabled"
+            else:
+                prefix, tip = "○ ", "Disabled"
+            item.setText(prefix + self._pipeline_label(pipeline))
+            item.setToolTip(tip)
+
+    def _update_warning(self) -> None:
+        """Show the current pipeline's validity problems in the editor warning label."""
+        idx = self._current_pipeline_index
+        problems = self._problems_of(self._pipelines[idx]) if idx is not None else []
+        self._warning_label.setText("⚠ " + "  ".join(problems) if problems else "")
+        self._warning_label.setVisible(bool(problems))
+
+    def _revalidate(self) -> None:
+        self._update_warning()
+        self._refresh_list_markers()
 
     def _on_list_row_changed(self, row: int) -> None:
         if self._loading:
@@ -392,6 +465,7 @@ class ConfigDialog(QDialog):
             self._enabled_check.setChecked(False)
             self._steps_table.setRowCount(0)
             self._update_op_buttons()
+        self._revalidate()
         self._loading = False
 
     def _render_steps_table(self, pipeline: Pipeline) -> None:
@@ -400,16 +474,24 @@ class ConfigDialog(QDialog):
         The stored identity (op key + per-row params) lives on the col-0 item, so
         capture/move/remove - which key off ``item(row, 0)`` - keep working. The
         I/O cell shows the op's alias signature; Options shows the step's effective
-        params as JSON. Both blank/raw-key fall back when the op is unregistered.
+        params as JSON. Both blank/raw-key fall back when the op is unregistered. A
+        step whose op needs an alias not mapped for this note type is marked ``⚠``
+        (it would silently no-op).
         """
         table = self._steps_table
         table.setRowCount(len(pipeline.steps))
         for r, step in enumerate(pipeline.steps):
             op = self._op_by_key(step.op)
+            unmapped = step_unmapped_aliases(
+                step, self._note_types, pipeline.note_type, ALL_OPERATIONS
+            )
+            label = op.label if op else step.op
 
-            op_item = QTableWidgetItem(op.label if op else step.op)
+            op_item = QTableWidgetItem(f"⚠ {label}" if unmapped else label)
             op_item.setData(Qt.ItemDataRole.UserRole, step.op)  # stored identity
             op_item.setData(Qt.ItemDataRole.UserRole + 1, dict(step.params))  # per-row params
+            if unmapped:
+                op_item.setToolTip(f"Unmapped field(s) for this note type: {', '.join(unmapped)}")
             self._set_readonly(op_item)
             table.setItem(r, 0, op_item)
 
@@ -421,6 +503,7 @@ class ConfigDialog(QDialog):
             opts_item = QTableWidgetItem(self._format_options(op, step))
             self._set_readonly(opts_item)
             table.setItem(r, 2, opts_item)
+        self._rendered_note_type = pipeline.note_type
         self._update_op_buttons()
 
     @staticmethod
@@ -438,16 +521,27 @@ class ConfigDialog(QDialog):
         params.update(step.params)
         return json.dumps(params, ensure_ascii=False) if params else ""
 
+    def _on_enabled_toggled(self, checked: bool) -> None:
+        """Reflect an enabled/disabled toggle in the list marker (●/○) immediately."""
+        if self._loading or self._current_pipeline_index is None:
+            return
+        self._pipelines[self._current_pipeline_index].enabled = checked
+        self._refresh_list_markers()
+
     def _on_target_edited(self, *_) -> None:
-        """Live-update the list label as the deck / note type is edited."""
+        """Live-update markers/warnings as the deck / note type is edited."""
         if self._loading or self._current_pipeline_index is None:
             return
         pipeline = self._pipelines[self._current_pipeline_index]
         pipeline.deck = self._deck_combo.currentText().strip()
         pipeline.note_type = self._ptype_combo.currentText().strip()
-        self._pipeline_list.item(self._current_pipeline_index).setText(
-            self._pipeline_label(pipeline)
-        )
+        if pipeline.note_type != self._rendered_note_type:
+            # The per-step unmapped-alias marks depend on the note type; re-mark.
+            row = self._steps_table.currentRow()
+            self._render_steps_table(pipeline)
+            if row >= 0:
+                self._steps_table.selectRow(row)
+        self._revalidate()
 
     def _add_pipeline(self) -> None:
         self._capture_pipeline_editor()
@@ -503,6 +597,7 @@ class ConfigDialog(QDialog):
         pipeline.steps[row], pipeline.steps[target] = pipeline.steps[target], pipeline.steps[row]
         self._render_steps_table(pipeline)
         self._steps_table.selectRow(target)
+        self._revalidate()
 
     def _show_add_op_menu(self) -> None:
         if self._current_pipeline_index is None:
@@ -526,6 +621,7 @@ class ConfigDialog(QDialog):
         self._capture_steps()
         self._pipelines[idx].steps.append(PipelineStep(op_key))
         self._render_steps_table(self._pipelines[idx])
+        self._revalidate()
 
     def _remove_operation(self) -> None:
         idx = self._current_pipeline_index
@@ -537,6 +633,7 @@ class ConfigDialog(QDialog):
         self._capture_steps()
         del self._pipelines[idx].steps[row]
         self._render_steps_table(self._pipelines[idx])
+        self._revalidate()
 
     def _edit_operation_params(self) -> None:
         idx = self._current_pipeline_index
@@ -568,8 +665,9 @@ class ConfigDialog(QDialog):
             return
         self._capture_pipeline_editor()
         pipeline = self._pipelines[self._current_pipeline_index]
-        if not pipeline.deck:
-            showInfo("Set a deck for this pipeline to run it from here.", parent=self)
+        problems = self._problems_of(pipeline)
+        if problems:
+            showInfo("This pipeline isn't runnable yet:\n- " + "\n- ".join(problems), parent=self)
             return
         try:
             note_ids = self.mw.col.find_notes(f'deck:"{pipeline.deck}"')
