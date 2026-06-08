@@ -215,13 +215,19 @@ class FieldOperation(Operation, ABC):
     params_spec = (ONLY_IF_EMPTY,)
 
     @abstractmethod
-    def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
+    def compute(
+        self,
+        client: BackendClient,
+        sources: list[dict[str, str]],
+        params: dict | None = None,
+    ) -> list[str | None]:
         """Batch-compute output values for ``sources`` (aligned in/out).
 
         ``sources`` are the alias-keyed views of the applicable notes (each op
         reads the input aliases it declares); the return list is aligned to it,
         each entry the computed output value or ``None`` to leave the field
-        unchanged.
+        unchanged. ``params`` are the step's resolved options (spec defaults +
+        stored overrides); ops that take no options ignore it.
         """
 
 
@@ -348,7 +354,7 @@ def plan_operations(
         ]
         if not applicable:
             continue
-        values = op.compute(client, [n.fields for n in applicable])
+        values = op.compute(client, [n.fields for n in applicable], item.params)
         for note, value in zip(applicable, values, strict=True):
             if value is None:
                 continue
