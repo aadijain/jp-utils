@@ -175,3 +175,21 @@ def test_step_unmapped_aliases_lists_input_and_output() -> None:
     assert step_unmapped_aliases(p_step, {}, "Lapis", _OPS) == ["word", "word-reading"]
     assert step_unmapped_aliases(p_step, _NOTE_TYPES, "Lapis", _OPS) == []
     assert step_unmapped_aliases(PipelineStep("ghost"), {}, "Lapis", _OPS) == []  # unregistered
+
+
+class _SortOp:
+    """Duck-typed sort op: reads an input alias, writes NO output (no output_alias)."""
+
+    def __init__(self, key, input_aliases):
+        self.key = key
+        self.input_aliases = input_aliases
+
+
+def test_step_unmapped_aliases_ignores_output_for_ops_without_one() -> None:
+    ops = [_SortOp("int-sort", ("frequency",))]
+    note_types = {"Lapis": {"frequency": "FreqSort"}}
+    step = PipelineStep("int-sort")
+    # Input mapped + no output to check -> valid (no false "unmapped output").
+    assert step_unmapped_aliases(step, note_types, "Lapis", ops) == []
+    # Input unmapped is still reported.
+    assert step_unmapped_aliases(step, {}, "Lapis", ops) == ["frequency"]
