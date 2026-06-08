@@ -21,7 +21,9 @@ class WordReadingOperation(FieldOperation):
     input_aliases = ("word",)
     output_alias = "word-reading"
 
-    def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
+    def compute(
+        self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
+    ) -> list[str | None]:
         resp = client.post("/v1/text/furigana", {"texts": [s["word"] for s in sources]})
         results = resp.get("results", [])
         out: list[str | None] = [None] * len(sources)

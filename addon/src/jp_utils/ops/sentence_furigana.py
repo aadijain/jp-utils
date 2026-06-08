@@ -35,7 +35,9 @@ class SentenceFuriganaOperation(FieldOperation):
     input_aliases = ("sentence",)
     output_alias = "sentence-furigana"
 
-    def compute(self, client: BackendClient, sources: list[dict[str, str]]) -> list[str | None]:
+    def compute(
+        self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
+    ) -> list[str | None]:
         split = [split_html(s["sentence"]) for s in sources]
         texts = [chunk for parts in split for chunk, is_tag in parts if not is_tag]
         resp = client.post("/v1/text/furigana", {"texts": texts}) if texts else {}
