@@ -9,6 +9,7 @@ from aqt.gui_hooks import browser_menus_did_init
 from aqt.qt import QAction
 
 from .config import load, save
+from .ui import auto
 from .ui.browser import add_run_action
 from .ui.config_dialog import ConfigDialog
 
@@ -25,3 +26,4 @@ def setup() -> None:
     mw.form.menuTools.addAction(action)
 
     browser_menus_did_init.append(add_run_action)
+    auto.register()
