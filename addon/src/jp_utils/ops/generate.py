@@ -42,13 +42,21 @@ ON_EXISTING = ParamSpec(
     description="A card with the same word + reading already exists: skip leaves it, "
     "overwrite refreshes its seeded + copied fields, duplicate creates another card anyway.",
 )
+COPY_CONTEXT = ParamSpec(
+    "copy_context",
+    "Copy context fields",
+    "bool",
+    default=True,
+    description="Copy the sentence-context fields mapped on both note types onto the new card. "
+    "word and word-reading are always seeded regardless.",
+)
 
 
 class GenerateVocabOperation(GenerateOperation):
     key = "generate-vocab"
     label = "Generate vocab cards"
     input_aliases = ("sentence",)  # the field tokenized for content words
-    params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING)
+    params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING, COPY_CONTEXT)
 
     def generate(self, client: BackendClient, sources: list[dict[str, str]]) -> list[list[dict]]:
         texts = [strip_markup(s.get("sentence", "")) for s in sources]
