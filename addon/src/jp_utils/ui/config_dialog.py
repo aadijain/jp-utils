@@ -14,6 +14,7 @@ note type: each alias offers the user's *actual* fields (pulled from
 
 import copy
 import json
+from dataclasses import replace
 
 from aqt.qt import (
     QAbstractItemView,
@@ -665,12 +666,29 @@ class ConfigDialog(QDialog):
         self._capture_steps()
         step = self._pipelines[idx].steps[row]
         op = self._op_by_key(step.op)
-        specs = op.params_spec if op else ()
+        specs = self._resolve_dynamic_specs(op.params_spec) if op else ()
         dialog = ParamEditorDialog(self, step.op, specs, step.params)
         if dialog.exec() and specs:  # don't wipe params of an unregistered op (no specs)
             step.params = dialog.values()
             self._render_steps_table(self._pipelines[idx])  # refresh row label + stored params
             self._steps_table.selectRow(row)
+
+    def _resolve_dynamic_specs(self, specs: tuple) -> tuple:
+        """Fill a choice param's options from the collection when it asks for them.
+
+        A param with ``choices_source`` (e.g. the generate op's target deck / note
+        type) can't list its options statically, so populate them here from the live
+        decks / note types (a blank option leads, so the param can be left unset).
+        """
+        sources = {"decks": self._deck_names, "note_types": self._collection_note_types}
+        resolved = []
+        for spec in specs:
+            provider = sources.get(spec.choices_source)
+            if provider is not None:
+                resolved.append(replace(spec, choices=("", *provider())))
+            else:
+                resolved.append(spec)
+        return tuple(resolved)
 
     def _update_op_buttons(self) -> None:
         """Enable the per-operation buttons only while a step row is selected."""
