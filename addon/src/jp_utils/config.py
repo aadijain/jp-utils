@@ -113,7 +113,9 @@ class Pipeline:
     whole pipeline. Operations are added explicitly, so there is no per-step
     enable flag - a step present in ``steps`` runs. ``auto_triggers`` lists the
     lifecycle events (subset of :data:`AUTO_TRIGGERS` keys) this pipeline
-    auto-runs on; empty = manual-only.
+    auto-runs on; empty = manual-only. ``name`` is an optional short label and
+    ``comment`` an optional free-text note - both purely for identifying a
+    pipeline beyond its ``(deck, note_type)``; neither affects runnability.
     """
 
     deck: str
@@ -121,6 +123,8 @@ class Pipeline:
     enabled: bool = True
     steps: list[PipelineStep] = field(default_factory=list)
     auto_triggers: list[str] = field(default_factory=list)
+    name: str = ""
+    comment: str = ""
 
 
 def _normalize_note_types(value) -> dict[str, dict[str, str]]:
@@ -197,6 +201,8 @@ def _normalize_pipelines(value) -> list[Pipeline]:
                 enabled=bool(item.get("enabled", True)),
                 steps=_normalize_steps(item.get("steps")),
                 auto_triggers=_normalize_triggers(item.get("auto_triggers")),
+                name=str(item.get("name") or ""),
+                comment=str(item.get("comment") or ""),
             )
         )
     return pipelines
