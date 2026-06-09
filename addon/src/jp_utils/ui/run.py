@@ -340,7 +340,12 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig) -> int:
             src_note = mw.col.get_note(NoteId(result.note_id))
             src_type = src_note.note_type()["name"]
             src_mapping = config.note_types.get(src_type, {})
-            copy = context_aliases(src_mapping, target_mapping)
+            # word + word-reading are always seeded; the context copy is opt-out.
+            copy = (
+                context_aliases(src_mapping, target_mapping)
+                if result.params.get("copy_context", True)
+                else []
+            )
             src_fields = to_note_fields(result.note_id, dict(src_note.items()), src_mapping).fields
 
             for word in result.words:
