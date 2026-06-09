@@ -15,9 +15,17 @@ Formatting (``params_spec``):
 - ``format``: ``expanded`` (an ``<ol>`` of senses, each with a nested ``<ul>``
   giving every gloss its own bullet) or ``compressed`` (an ``<ol>`` with one
   line per sense, its glosses joined). Both group glosses by sense.
-- ``include_pos`` prefixes each sense with its part of speech; ``include_examples``
-  adds one example sentence per sense; ``include_readings`` appends an
-  all-readings line (``食べる readings: たべる``) after the definition.
+- ``include_pos`` prefixes each sense with its part of speech as coloured chips;
+  ``include_examples`` adds one example sentence per sense in an accented box (the
+  English translation dimmed); ``include_readings`` appends a dimmed all-readings
+  footer (``食べる readings: たべる``) after the definition.
+
+**Styling is self-contained inline CSS** (no card-template/CSS dependency): every
+styled element carries a ``style="..."`` attribute, theme-adaptive via
+``currentColor`` / ``color-mix`` so the accents track the card's text colour in
+both light and dark. The whole output is wrapped in a ``jpu-definition`` div as an
+optional theming hook. See the note-type field reference for the
+Yomitan glossary export this draws inspiration from.
 
 The op key is ``word-definition``; its output alias stays ``definition`` (->
 Lapis ``MainDefinition``).
@@ -29,14 +37,42 @@ from .base import ONLY_IF_EMPTY, FieldOperation, ParamSpec
 FORMAT_EXPANDED = "expanded"
 FORMAT_COMPRESSED = "compressed"
 
+# Inline styles, kept as named constants so the markup below stays readable. Colours
+# are theme-adaptive: chips use a fixed neutral grey (legible on light + dark), while
+# borders/tints derive from `currentColor` (the card's text colour) via `color-mix`,
+# and de-emphasis uses `opacity` (universally supported; degrades gracefully).
+_CONTAINER_STYLE = "text-align:left;"
+_CHIP_STYLE = (
+    "display:inline-block;background:#565656;color:#fff;border-radius:.3em;"
+    "font-size:.78em;font-weight:bold;padding:.05em .4em;margin:0 .35em .15em 0;"
+    "vertical-align:text-bottom;"
+)
+_GLOSS_UL_STYLE = "margin:.15em 0;padding-left:1.2em;"
+_SENSE_OL_STYLE = "margin:.15em 0;padding-left:1.4em;"
+_SENSE_LI_STYLE = "margin:.3em 0;"
+_EXAMPLE_BOX_STYLE = (
+    "border-left:3px solid currentColor;"
+    "background:color-mix(in srgb,currentColor 6%,transparent);"
+    "border-radius:.3em;padding:.3em .5em;margin:.3em 0;"
+)
+_EXAMPLE_EN_STYLE = "opacity:.6;font-size:.85em;"
+_READINGS_STYLE = (
+    "margin-top:.5em;padding-top:.35em;"
+    "border-top:1px solid color-mix(in srgb,currentColor 25%,transparent);"
+    "font-size:.85em;opacity:.7;"
+)
+
 
 def _pos_prefix(sense: dict, include_pos: bool) -> str:
+    """Render the sense's parts of speech as coloured chips (empty when off/absent)."""
     pos = sense.get("pos") or []
-    return f"[{', '.join(pos)}] " if include_pos and pos else ""
+    if not include_pos or not pos:
+        return ""
+    return "".join(f'<span style="{_CHIP_STYLE}">{p}</span>' for p in pos)
 
 
 def _example_html(sense: dict, include_examples: bool) -> str:
-    """Render at most one example sentence (Japanese, then English) for a sense."""
+    """Render at most one example sentence (Japanese, then dimmed English) for a sense."""
     examples = sense.get("examples") or []
     if not include_examples or not examples:
         return ""
@@ -45,16 +81,23 @@ def _example_html(sense: dict, include_examples: bool) -> str:
     en = ex.get("en", "")
     if not ja:
         return ""
-    return f"<div>{ja}</div>" + (f"<div>{en}</div>" if en else "")
+    inner = f'<div lang="ja">{ja}</div>'
+    if en:
+        inner += f'<div style="{_EXAMPLE_EN_STYLE}">{en}</div>'
+    return f'<div style="{_EXAMPLE_BOX_STYLE}">{inner}</div>'
 
 
 def _sense_inner(sense: dict, fmt: str, inc_pos: bool, inc_ex: bool) -> str:
-    """Render a sense's content (POS prefix + glosses + example), without a list wrapper."""
+    """Render a sense's content (POS chips + glosses + example), without a list wrapper."""
     prefix = _pos_prefix(sense, inc_pos)
     if fmt == FORMAT_COMPRESSED:
         body = "; ".join(sense["glosses"])
     else:  # FORMAT_EXPANDED: every gloss its own bullet
-        body = "<ul>" + "".join(f"<li>{g}</li>" for g in sense["glosses"]) + "</ul>"
+        body = (
+            f'<ul style="{_GLOSS_UL_STYLE}">'
+            + "".join(f"<li>{g}</li>" for g in sense["glosses"])
+            + "</ul>"
+        )
     return prefix + body + _example_html(sense, inc_ex)
 
 
@@ -73,11 +116,15 @@ def _format(result: dict, params: dict) -> str | None:
     if params.get("include_readings") and readings:
         lemma = result.get("lemma", "")
         label = f"{lemma} readings" if lemma else "Readings"
-        foot = f"<div>{label}: {', '.join(readings)}</div>"
+        foot = f'<div style="{_READINGS_STYLE}">{label}: {", ".join(readings)}</div>'
 
     inners = [_sense_inner(s, fmt, inc_pos, inc_ex) for s in senses]
-    body = "<ol>" + "".join(f"<li>{inner}</li>" for inner in inners) + "</ol>"
-    return body + foot
+    body = (
+        f'<ol style="{_SENSE_OL_STYLE}">'
+        + "".join(f'<li style="{_SENSE_LI_STYLE}">{inner}</li>' for inner in inners)
+        + "</ol>"
+    )
+    return f'<div class="jpu-definition" style="{_CONTAINER_STYLE}">{body + foot}</div>'
 
 
 class WordDefinitionOperation(FieldOperation):
