@@ -90,6 +90,20 @@ def test_auto_triggers_default_empty_and_round_trip() -> None:
     assert AddonConfig.from_dict(cfg.to_dict()) == cfg
 
 
+def test_name_and_comment_default_empty_and_round_trip() -> None:
+    p = Pipeline(deck="D", note_type="N")
+    assert p.name == "" and p.comment == ""
+    cfg = AddonConfig(pipelines=[Pipeline("D", "N", name="My loop", comment="notes\nhere")])
+    assert AddonConfig.from_dict(cfg.to_dict()) == cfg
+
+
+def test_normalize_pipelines_coerces_name_and_comment() -> None:
+    cfg = AddonConfig.from_dict({"pipelines": [{"note_type": "N", "name": 5, "comment": None}]})
+    p = cfg.pipelines[0]
+    assert p.name == "5"  # non-string coerced
+    assert p.comment == ""  # None -> empty
+
+
 def test_pipelines_for_trigger_filters_by_event_enabled_and_target() -> None:
     pipelines = [
         Pipeline("D1", "N", auto_triggers=["start"]),
