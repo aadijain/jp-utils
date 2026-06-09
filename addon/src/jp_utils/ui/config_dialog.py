@@ -31,6 +31,7 @@ from aqt.qt import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     Qt,
     QTableWidget,
@@ -310,6 +311,13 @@ class ConfigDialog(QDialog):
         box = QVBoxLayout(self._editor)
 
         form = QFormLayout()
+        form.setVerticalSpacing(6)  # compact rows; the style default leaves big gaps
+        form.setContentsMargins(0, 0, 0, 0)
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("Optional label (shown in the list)")
+        self._name_edit.textChanged.connect(self._on_name_edited)
+        form.addRow("Name", self._name_edit)
+
         self._deck_combo = _NoWheelComboBox()
         self._deck_combo.setEditable(True)
         self._deck_combo.addItem("")
@@ -338,6 +346,11 @@ class ConfigDialog(QDialog):
             toggles.addWidget(check)
         toggles.addStretch(1)
         form.addRow("", toggles)
+
+        self._comment_edit = QPlainTextEdit()
+        self._comment_edit.setPlaceholderText("Optional notes about this pipeline")
+        self._comment_edit.setFixedHeight(56)
+        form.addRow("Comment", self._comment_edit)
         box.addLayout(form)
 
         self._warning_label = QLabel("")
@@ -405,8 +418,12 @@ class ConfigDialog(QDialog):
         return names[0] if names else ""
 
     @staticmethod
-    def _pipeline_label(pipeline: Pipeline) -> str:
+    def _pipeline_target(pipeline: Pipeline) -> str:
         return f"{pipeline.deck or '(no deck)'} / {pipeline.note_type or '(no note type)'}"
+
+    @classmethod
+    def _pipeline_label(cls, pipeline: Pipeline) -> str:
+        return pipeline.name.strip() or cls._pipeline_target(pipeline)
 
     def _problems_of(self, pipeline: Pipeline) -> list[str]:
         return pipeline_problems(pipeline, self._pipelines, self._note_types, ALL_OPERATIONS)
@@ -424,6 +441,12 @@ class ConfigDialog(QDialog):
         self._current_pipeline_index = select if valid else None
         self._load_pipeline_editor()
 
+    def _marker_prefix(self, pipeline: Pipeline) -> str:
+        """The status glyph for a list row: ``⚠`` invalid, ``●`` enabled, ``○`` disabled."""
+        if self._problems_of(pipeline):
+            return "⚠ "
+        return "● " if pipeline.enabled else "○ "
+
     def _refresh_list_markers(self) -> None:
         """Re-mark every list item by status: ``⚠`` invalid, ``●`` enabled, ``○`` disabled.
 
@@ -436,12 +459,13 @@ class ConfigDialog(QDialog):
                 continue
             problems = self._problems_of(pipeline)
             if problems:
-                prefix, tip = "⚠ ", "\n".join(problems)
-            elif pipeline.enabled:
-                prefix, tip = "● ", "Enabled"
+                tip = "\n".join(problems)
             else:
-                prefix, tip = "○ ", "Disabled"
-            item.setText(prefix + self._pipeline_label(pipeline))
+                tip = "Enabled" if pipeline.enabled else "Disabled"
+            # When a name is shown, keep the deck/note_type target discoverable.
+            if pipeline.name.strip():
+                tip = f"{self._pipeline_target(pipeline)}\n{tip}"
+            item.setText(self._marker_prefix(pipeline) + self._pipeline_label(pipeline))
             item.setToolTip(tip)
 
     def _update_warning(self) -> None:
@@ -468,6 +492,8 @@ class ConfigDialog(QDialog):
         self._editor.setEnabled(idx is not None)
         if idx is not None:
             pipeline = self._pipelines[idx]
+            self._name_edit.setText(pipeline.name)
+            self._comment_edit.setPlainText(pipeline.comment)
             self._deck_combo.setCurrentText(pipeline.deck)
             self._ptype_combo.setCurrentText(pipeline.note_type)
             self._enabled_check.setChecked(pipeline.enabled)
@@ -475,6 +501,8 @@ class ConfigDialog(QDialog):
                 check.setChecked(key in pipeline.auto_triggers)
             self._render_steps_table(pipeline)
         else:
+            self._name_edit.setText("")
+            self._comment_edit.setPlainText("")
             self._deck_combo.setCurrentText("")
             self._ptype_combo.setCurrentText("")
             self._enabled_check.setChecked(False)
@@ -545,6 +573,16 @@ class ConfigDialog(QDialog):
         self._pipelines[self._current_pipeline_index].enabled = checked
         self._refresh_list_markers()
 
+    def _on_name_edited(self, text: str) -> None:
+        """Live-update the list label as the pipeline name is edited."""
+        if self._loading or self._current_pipeline_index is None:
+            return
+        pipeline = self._pipelines[self._current_pipeline_index]
+        pipeline.name = text.strip()
+        item = self._pipeline_list.item(self._current_pipeline_index)
+        if item is not None:
+            item.setText(self._marker_prefix(pipeline) + self._pipeline_label(pipeline))
+
     def _on_target_edited(self, *_) -> None:
         """Live-update markers/warnings as the deck / note type is edited."""
         if self._loading or self._current_pipeline_index is None:
@@ -596,6 +634,8 @@ class ConfigDialog(QDialog):
         if idx is None or not (0 <= idx < len(self._pipelines)):
             return
         pipeline = self._pipelines[idx]
+        pipeline.name = self._name_edit.text().strip()
+        pipeline.comment = self._comment_edit.toPlainText().strip()
         pipeline.deck = self._deck_combo.currentText().strip()
         pipeline.note_type = self._ptype_combo.currentText().strip()
         pipeline.enabled = self._enabled_check.isChecked()
