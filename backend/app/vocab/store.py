@@ -182,15 +182,6 @@ class VocabStore:
             (r["lemma"], r["reading"]) for r in self._read(_CURRENT_SQL) if r["action"] in _PRESENT
         }
 
-    def current_lemmas(self) -> set[str]:
-        """The recorded (not-unknown) set of lemmas, ignoring reading.
-
-        The lemma-only projection of :meth:`current_keys` (status != unknown), used
-        by n+1 scoring: matching is lemma-only because stored readings are
-        dict-preferred while the tokenizer emits Sudachi readings.
-        """
-        return {r["lemma"] for r in self._read(_CURRENT_SQL) if r["action"] in _PRESENT}
-
     def filter_by_status(
         self,
         words: Iterable[VocabWord],

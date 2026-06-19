@@ -16,7 +16,33 @@ from app.text.words import content_words_with_readings
 from app.vocab import VocabStore
 from shared.mining import MiningSentence, Nplus1SortResponse, SentenceScore
 from shared.text import SplitMode
-from shared.vocab import VocabWord
+from shared.vocab import VocabWord, WordStatus
+
+# n+1's "known" set = every non-unknown lemma. Resolved lemma-only (status collapsed
+# across a lemma's readings) via `filter_by_status`, the same reading-safe path
+# generation uses, so a dict-vs-Sudachi reading mismatch can't surface a
+# known word as new.
+_KNOWN_STATUSES = (
+    WordStatus.SEEN,
+    WordStatus.LEARNT,
+    WordStatus.IGNORED,
+    WordStatus.BLACKLISTED,
+)
+
+
+def _known_lemmas(store: VocabStore, lemma_lists: list[list[str]]) -> set[str]:
+    """The subset of the batch's lemmas the user already knows (non-unknown status).
+
+    Queries only the lemmas that actually appear, lemma-only matched, so the n+1
+    known set funnels through the one `filter_by_status` lemma path.
+    """
+    distinct = {lemma for lemmas in lemma_lists for lemma in lemmas}
+    matched = store.filter_by_status(
+        [VocabWord(lemma, "") for lemma in distinct],
+        _KNOWN_STATUSES,
+        match_lemma_only=True,
+    ).matched
+    return {w.lemma for w in matched}
 
 
 def _lemma_ranks(lemma_lists: list[list[str]], cache: DictCache | None) -> dict[str, int]:
@@ -49,7 +75,7 @@ def nplus1_sort(
         content_words_with_readings(tokenizer, s.text, mode, tok_cache) for s in sentences
     ]
     lemma_lists = [[w.lemma for w in words] for words in word_lists]
-    known = store.current_lemmas()
+    known = _known_lemmas(store, lemma_lists)
 
     order = nplus1_order(lemma_lists, known, _lemma_ranks(lemma_lists, cache))
     sequence = [0] * len(sentences)
