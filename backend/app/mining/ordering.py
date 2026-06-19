@@ -19,8 +19,8 @@ shrinks as words are learnt, so the freshest heap entry for a sentence always ha
 the smallest key; stale entries are skipped via a `placed` flag (lazy deletion).
 
 Pure: no tokenizer, no store. Callers pass each sentence's distinct content lemmas
-(:func:`app.text.words.content_words`), the known-lemma set
-(:meth:`app.vocab.store.VocabStore.current_lemmas`), and a lemma -> rank map.
+(:func:`app.text.words.content_words`), the known-lemma set (resolved lemma-only
+via `VocabStore.filter_by_status`, see `app.mining.sort`), and a lemma -> rank map.
 """
 
 import heapq
