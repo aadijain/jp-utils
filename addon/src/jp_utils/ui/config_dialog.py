@@ -33,6 +33,7 @@ from aqt.qt import (
     QMenu,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     Qt,
     QTableWidget,
     QTableWidgetItem,
@@ -312,7 +313,7 @@ class ConfigDialog(QDialog):
         box = QVBoxLayout(self._editor)
 
         form = QFormLayout()
-        form.setVerticalSpacing(6)  # compact rows; the style default leaves big gaps
+        form.setVerticalSpacing(4)  # tight rows; the Fixed-height host keeps gaps from growing
         form.setContentsMargins(0, 0, 0, 0)
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Optional label (shown in the list)")
@@ -352,7 +353,13 @@ class ConfigDialog(QDialog):
         self._comment_edit.setPlaceholderText("Optional notes about this pipeline")
         self._comment_edit.setFixedHeight(56)
         form.addRow("Comment", self._comment_edit)
-        box.addLayout(form)
+        # Host the form in a Fixed-height container so leftover vertical space goes
+        # to the operations table below, instead of QFormLayout spreading it across
+        # rows (which made gaps grow with the window size).
+        form_host = QWidget()
+        form_host.setLayout(form)
+        form_host.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        box.addWidget(form_host)
 
         self._warning_label = QLabel("")
         self._warning_label.setWordWrap(True)
