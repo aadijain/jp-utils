@@ -1,8 +1,8 @@
 """A small modal editor for one operation's params, rendered from its ParamSpec.
 
 Each :class:`~jp_utils.ops.ParamSpec` becomes a row: ``bool`` -> checkbox,
-``choice`` -> combo, ``text`` -> line edit. Imports ``aqt`` and so loads only
-inside Anki.
+``choice`` -> combo, ``multichoice`` -> checkable list, ``text`` -> line edit.
+Imports ``aqt`` and so loads only inside Anki.
 """
 
 from aqt.qt import (
@@ -13,6 +13,9 @@ from aqt.qt import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    Qt,
     QVBoxLayout,
     QWidget,
 )
@@ -71,6 +74,16 @@ class ParamEditorDialog(QDialog):
             if value is not None:
                 widget.setCurrentText(str(value))
             return widget
+        if spec.kind == "multichoice":
+            widget = QListWidget()
+            selected = set(value or ())
+            for choice in spec.choices:
+                item = QListWidgetItem(choice)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                state = Qt.CheckState.Checked if choice in selected else Qt.CheckState.Unchecked
+                item.setCheckState(state)
+                widget.addItem(item)
+            return widget
         return QLineEdit("" if value is None else str(value))
 
     def values(self) -> dict:
@@ -82,6 +95,12 @@ class ParamEditorDialog(QDialog):
                 out[spec.key] = widget.isChecked()
             elif spec.kind == "choice":
                 out[spec.key] = widget.currentText()
+            elif spec.kind == "multichoice":
+                out[spec.key] = [
+                    widget.item(i).text()
+                    for i in range(widget.count())
+                    if widget.item(i).checkState() == Qt.CheckState.Checked
+                ]
             else:
                 out[spec.key] = widget.text().strip()
         return out
