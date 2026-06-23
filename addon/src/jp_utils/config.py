@@ -24,7 +24,7 @@ Two layers:
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-DEFAULT_SERVER_URL = "http://localhost:8000"
+DEFAULT_SERVER_URL = "http://localhost:9618"
 
 # Every alias an operation may read or write, bound to a note field by the
 # per-note-type map. One flat namespace: an alias is the same logical field

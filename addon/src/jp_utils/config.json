@@ -1,5 +1,5 @@
 {
-  "server_url": "http://localhost:8000",
+  "server_url": "http://localhost:9618",
   "token": "",
   "note_types": {
     "Lapis": {
