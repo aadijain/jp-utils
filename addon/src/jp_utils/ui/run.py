@@ -340,11 +340,10 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig) -> int:
             src_note = mw.col.get_note(NoteId(result.note_id))
             src_type = src_note.note_type()["name"]
             src_mapping = config.note_types.get(src_type, {})
-            # word + word-reading are always seeded; the context copy is opt-out.
-            copy = (
-                context_aliases(src_mapping, target_mapping)
-                if result.params.get("copy_context", True)
-                else []
+            # word + word-reading are always seeded; the rest is the user's whitelist
+            # (an empty list copies nothing) intersected with what's mappable on both.
+            copy = context_aliases(
+                src_mapping, target_mapping, result.params.get("copy_aliases", [])
             )
             src_fields = to_note_fields(result.note_id, dict(src_note.items()), src_mapping).fields
 

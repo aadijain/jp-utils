@@ -14,8 +14,16 @@ the whole thing reuses the pipeline machinery (config, params dialog, validation
 """
 
 from ..client import BackendClient
+from ..config import ALIASES
 from .base import GenerateOperation, ParamSpec
 from .nplus1 import strip_markup
+
+# Every alias is offerable in the copy whitelist; an entry only copies when actually
+# mapped on both note types and not a seed (see :func:`jp_utils.generation.context_aliases`).
+# Default-checked: the sentence-context fields (the ``sentence*`` aliases), which is what
+# usually carries onto a word card.
+CONTEXT_ALIAS_CHOICES = ALIASES
+DEFAULT_CONTEXT_ALIASES = tuple(a for a in ALIASES if a.startswith("sentence"))
 
 TARGET_DECK = ParamSpec(
     "target_deck",
@@ -42,13 +50,15 @@ ON_EXISTING = ParamSpec(
     description="A card with the same word + reading already exists: skip leaves it, "
     "overwrite refreshes its seeded + copied fields, duplicate creates another card anyway.",
 )
-COPY_CONTEXT = ParamSpec(
-    "copy_context",
+COPY_ALIASES = ParamSpec(
+    "copy_aliases",
     "Copy context fields",
-    "bool",
-    default=True,
-    description="Copy the sentence-context fields mapped on both note types onto the new card. "
-    "word and word-reading are always seeded regardless.",
+    "multichoice",
+    default=DEFAULT_CONTEXT_ALIASES,
+    choices=CONTEXT_ALIAS_CHOICES,
+    description="Sentence-context aliases to copy onto the new card (each only copies when "
+    "mapped on both note types). Unchecked means copy nothing; word and word-reading are "
+    "always seeded regardless.",
 )
 
 
@@ -56,7 +66,7 @@ class GenerateVocabOperation(GenerateOperation):
     key = "generate-vocab"
     label = "Generate vocab cards"
     input_aliases = ("sentence",)  # the field tokenized for content words
-    params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING, COPY_CONTEXT)
+    params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING, COPY_ALIASES)
 
     def generate(self, client: BackendClient, sources: list[dict[str, str]]) -> list[list[dict]]:
         texts = [strip_markup(s.get("sentence", "")) for s in sources]

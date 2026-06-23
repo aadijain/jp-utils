@@ -10,14 +10,22 @@ unit-tested without Anki.
 SEED_ALIASES = ("word", "word-reading")
 
 
-def context_aliases(source_mapping: dict, target_mapping: dict) -> list[str]:
+def context_aliases(
+    source_mapping: dict,
+    target_mapping: dict,
+    whitelist=None,
+) -> list[str]:
     """Aliases to copy 1:1 from the source sentence note onto the new word note.
 
     An alias is copied when it maps to a real field on BOTH note types, minus the
-    seeds the op writes itself (:data:`SEED_ALIASES`). Sorted for a stable order.
+    seeds the op writes itself (:data:`SEED_ALIASES`). ``whitelist`` restricts the
+    copy set to the user-chosen aliases: an empty list copies nothing, while ``None``
+    means "no restriction" (every eligible alias). Sorted for a stable order.
     """
     excluded = set(SEED_ALIASES)
     shared = set(source_mapping) & set(target_mapping)
+    if whitelist is not None:
+        shared &= set(whitelist)
     return sorted(
         alias
         for alias in shared
