@@ -61,17 +61,17 @@ uv run python ../scripts/fetch_freq_dict.py
 uv run python ../scripts/fetch_jmdict_furigana.py
 uv run python -m app.dicts                       # parse the dicts into a SQLite cache
 
-uv run uvicorn app.main:app --reload             # start the dev server
+uv run uvicorn app.main:app --reload --port 9618  # start the dev server
 ```
 
-Open <http://127.0.0.1:8000/docs> for the API explorer, or <http://127.0.0.1:8000/health> (public, always 200) to see whether the dictionaries and tokenizer loaded.
+Open <http://127.0.0.1:9618/docs> for the API explorer, or <http://127.0.0.1:9618/health> (public, always 200) to see whether the dictionaries and tokenizer loaded.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `uv sync` | Install dependencies |
-| `uv run uvicorn app.main:app --reload` | Start the dev server |
+| `uv run uvicorn app.main:app --reload --port 9618` | Start the dev server |
 | `uv run pytest` | Run the tests |
 | `uv run ruff check .` | Lint (ruff config is at the repo root) |
 | `uv run ruff format .` | Format |

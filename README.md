@@ -41,7 +41,7 @@ uv run python -m app.dicts                       # parse the dicts into the cach
 uv run uvicorn app.main:app --reload             # start the dev server
 ```
 
-Then open <http://127.0.0.1:8000/docs> for the API explorer or <http://127.0.0.1:8000/health> to check the dictionaries loaded. Full detail (endpoints, dictionary resolution, env vars): [backend/README.md](backend/README.md).
+Then open <http://127.0.0.1:9618/docs> for the API explorer or <http://127.0.0.1:9618/health> to check the dictionaries loaded. Full detail (endpoints, dictionary resolution, env vars): [backend/README.md](backend/README.md).
 
 **Add-on**:
 

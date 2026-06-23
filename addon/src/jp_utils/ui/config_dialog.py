@@ -46,6 +46,7 @@ from ..client import BackendClient, BackendError
 from ..config import (
     ALIASES,
     AUTO_TRIGGERS,
+    DEFAULT_SERVER_URL,
     AddonConfig,
     Pipeline,
     PipelineStep,
@@ -123,7 +124,7 @@ class ConfigDialog(QDialog):
         form = QFormLayout(page)
 
         self._url_edit = QLineEdit(config.server_url)
-        self._url_edit.setPlaceholderText("http://localhost:8000")
+        self._url_edit.setPlaceholderText(DEFAULT_SERVER_URL)
         form.addRow("Server URL", self._url_edit)
 
         self._token_edit = QLineEdit(config.token)

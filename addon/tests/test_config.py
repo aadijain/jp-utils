@@ -26,7 +26,7 @@ _NOTE_TYPES = {"Lapis": {"word": "Expression", "word-reading": "Reading"}}
 
 def test_defaults_seed_lapis_but_no_pipelines() -> None:
     cfg = AddonConfig()
-    assert cfg.server_url == "http://localhost:8000"
+    assert cfg.server_url == "http://localhost:9618"
     assert cfg.note_types["Lapis"]["definition"] == "MainDefinition"
     assert cfg.pipelines == []  # pipelines are not seeded
 
