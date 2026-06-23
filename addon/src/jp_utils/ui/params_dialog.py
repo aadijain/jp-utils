@@ -1,7 +1,8 @@
 """A small modal editor for one operation's params, rendered from its ParamSpec.
 
 Each :class:`~jp_utils.ops.ParamSpec` becomes a row: ``bool`` -> checkbox,
-``choice`` -> combo, ``multichoice`` -> checkable list, ``text`` -> line edit.
+``choice`` -> combo, ``multichoice`` -> checkable list (entries in the spec's
+``locked_choices`` shown permanently checked), ``text`` -> line edit.
 Imports ``aqt`` and so loads only inside Anki.
 """
 
@@ -76,10 +77,17 @@ class ParamEditorDialog(QDialog):
             return widget
         if spec.kind == "multichoice":
             widget = QListWidget()
-            selected = set(value or ())
+            # A locked entry is always in effect, so it shows checked and the user
+            # can't toggle it (the check indicator still draws without the flag).
+            locked = set(spec.locked_choices)
+            selected = set(value or ()) | locked
             for choice in spec.choices:
                 item = QListWidgetItem(choice)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                if choice in locked:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setToolTip("Always written by this operation.")
+                else:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 state = Qt.CheckState.Checked if choice in selected else Qt.CheckState.Unchecked
                 item.setCheckState(state)
                 widget.addItem(item)

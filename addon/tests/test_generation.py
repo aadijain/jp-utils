@@ -1,6 +1,7 @@
 """Tests for the pure generation helpers (copy-set derivation, dedup key)."""
 
 from jp_utils.generation import context_aliases, word_key
+from jp_utils.ops.generate import COPY_ALIASES, SEED_ALIASES
 
 
 def test_context_aliases_copies_shared_minus_seeds():
@@ -25,6 +26,29 @@ def test_context_aliases_copies_shared_minus_seeds():
     ]
 
 
+def test_context_aliases_whitelist_restricts_copy_set():
+    source = {"sentence": "S", "sentence-audio": "SentenceAudio", "alt-definition": "SentEng"}
+    target = {"sentence": "S", "sentence-audio": "SentenceAudio", "alt-definition": "Glossary"}
+
+    # Only the whitelisted (and still-eligible) aliases come through.
+    assert context_aliases(source, target, ["sentence-audio", "alt-definition"]) == [
+        "alt-definition",
+        "sentence-audio",
+    ]
+
+
+def test_context_aliases_empty_whitelist_copies_nothing():
+    source = {"sentence": "Sentence", "sentence-audio": "SentenceAudio"}
+    target = {"sentence": "Sentence", "sentence-audio": "SentenceAudio"}
+    assert context_aliases(source, target, []) == []
+
+
+def test_context_aliases_none_whitelist_copies_all_eligible():
+    source = {"sentence": "Sentence", "sentence-audio": "SentenceAudio"}
+    target = {"sentence": "Sentence", "sentence-audio": "SentenceAudio"}
+    assert context_aliases(source, target, None) == ["sentence", "sentence-audio"]
+
+
 def test_context_aliases_requires_mapping_on_both_sides():
     source = {"sentence-audio": "SentenceAudio"}  # only on source
     target = {"sentence": "Sentence"}  # only on target
@@ -45,3 +69,12 @@ def test_word_key_strips_markup_from_both_sides():
 
 def test_word_key_keeps_homographs_apart():
     assert word_key("辛い", "からい") != word_key("辛い", "つらい")
+
+
+def test_copy_whitelist_locks_the_seeded_aliases():
+    # The op writes the seeds itself, so the copy list offers them permanently
+    # checked - and copying them is still a no-op even when they arrive whitelisted.
+    assert COPY_ALIASES.locked_choices == SEED_ALIASES
+    assert set(SEED_ALIASES) <= set(COPY_ALIASES.choices)
+    mapping = {"word": "Expression", "word-reading": "Reading"}
+    assert context_aliases(mapping, mapping, list(SEED_ALIASES)) == []

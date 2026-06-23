@@ -42,6 +42,10 @@ class ParamSpec:
     # edit time from the collection ("decks" -> deck names, "note_types" -> note-type
     # names). Empty means use the static ``choices`` above.
     choices_source: str = ""
+    # ``multichoice`` only: entries that are always in effect. Rendered checked and
+    # not user-checkable, so the list states what the op does instead of implying
+    # the entry is the user's to turn off.
+    locked_choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
