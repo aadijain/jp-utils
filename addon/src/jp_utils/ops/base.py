@@ -26,8 +26,10 @@ from ..client import BackendClient
 class ParamSpec:
     """Declares one option an operation accepts, so the UI can render an editor.
 
-    ``kind`` is ``"bool"`` (checkbox), ``"choice"`` (combo over ``choices``), or
-    ``"text"`` (line edit). ``default`` is used when a step omits the param.
+    ``kind`` is ``"bool"`` (checkbox), ``"choice"`` (combo over ``choices``),
+    ``"multichoice"`` (a checkable list over ``choices``; value is the list of
+    checked entries), or ``"text"`` (line edit). ``default`` is used when a step
+    omits the param.
     """
 
     key: str
