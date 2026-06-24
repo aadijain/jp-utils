@@ -123,6 +123,18 @@ class _ClearAlias(FieldOperation):
         return [s.get(target, "").strip() or None for s in sources]
 
 
+def test_param_driven_io_spec_targets_chosen_alias() -> None:
+    op = _ClearAlias()
+    # the dynamic contract follows the param...
+    assert op.io_spec({"target": "word"}).outputs == ("word",)
+    assert op.io_display({"target": "word"}) == "{word} ← {word}"
+    # ...and the runner writes to that same param-chosen alias.
+    note = NoteFields(note_id=1, fields={"word": "  neko  ", "word-reading": ""})
+    plans = plan_operations(None, [ConfiguredOp(op, {"target": "word"})], [note])
+    assert plans[0].updates[0].alias == "word"
+    assert plans[0].updates[0].value == "neko"
+
+
 def test_field_op_with_no_resolved_output_writes_nothing() -> None:
     note = NoteFields(note_id=1, fields={"word": "neko"})
 
