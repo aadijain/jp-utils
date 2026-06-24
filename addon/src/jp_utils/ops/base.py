@@ -336,6 +336,37 @@ class GenerateOperation(Operation, ABC):
         """
 
 
+class StatusOperation(Operation, ABC):
+    """An operation that syncs card state into the vocab store (writes nothing).
+
+    The fifth op kind. Like :class:`GenerateOperation` its product isn't a field on
+    the source note but a backend side effect - here an append to ``/v1/vocab/words``
+    that advances a word's status from how far its card has progressed. So the wiring
+    splits the (deck, note type)'s notes by status - the words it considers merely
+    ``seen`` vs ``learnt`` - and hands both to :meth:`collect`, which derives the
+    events; the wiring posts them in one batched, upgrade-only append, so re-running
+    the start-sweep is idempotent (the store no-ops a non-raising event, and ``seen``
+    never downgrades an already-``learnt`` word).
+    """
+
+    io_verb = "(update vocab store)"
+
+    @abstractmethod
+    def collect(
+        self,
+        client: BackendClient,
+        seen_sources: list[dict[str, str]],
+        learnt_sources: list[dict[str, str]],
+    ) -> list[dict]:
+        """Vocab events for these sources, as ``RecordEntry`` dicts.
+
+        Each entry is ``{"lemma", "reading", "action", "source"}``. ``seen_sources``
+        are the alias-keyed views of the notes the wiring classed as ``seen``,
+        ``learnt_sources`` the ``learnt`` ones. The return is a flat list (not aligned
+        to either input).
+        """
+
+
 def resolve_params(op: Operation, step_params: dict | None) -> dict:
     """An op's effective params: its spec defaults overlaid with a step's overrides.
 
@@ -479,3 +510,32 @@ def plan_generation(
                     GenerationResult(note_id=note.note_id, op=op, params=item.params, words=words)
                 )
     return plans
+
+
+def plan_status(
+    client: BackendClient,
+    configured: list[ConfiguredOp],
+    seen_notes: list[NoteFields],
+    learnt_notes: list[NoteFields],
+) -> list[dict]:
+    """Collect the vocab events each :class:`StatusOperation` derives from its notes.
+
+    The background (IO-bound) half of a status sync: one batched backend pass per op
+    (deinflect each word to its lemma) to derive the events, skipping notes missing a
+    required input. ``seen_notes``/``learnt_notes`` are the (deck, note type)'s notes
+    already classed onto the seen/learnt axis by the wiring. Returns a flat list of
+    ``RecordEntry`` dicts the wiring posts to ``/v1/vocab/words`` in one append (the
+    store guards them upgrade-only). Non-status ops are ignored, so this is safe to
+    call with a pipeline's full op list.
+    """
+    entries: list[dict] = []
+    for item in configured:
+        op = item.operation
+        if not isinstance(op, StatusOperation):
+            continue
+        seen_app = [n.fields for n in seen_notes if op.applicable(n.fields, item.params)]
+        learnt_app = [n.fields for n in learnt_notes if op.applicable(n.fields, item.params)]
+        if not seen_app and not learnt_app:
+            continue
+        entries.extend(op.collect(client, seen_app, learnt_app))
+    return entries
