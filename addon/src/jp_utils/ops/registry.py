@@ -5,6 +5,7 @@ layer (runner, Pipelines tab) to iterate. Grows one operation at a time.
 """
 
 from .base import Operation
+from .clear_formatting import ClearFormattingOperation
 from .frequency import FrequencyOperation
 from .generate import GenerateVocabOperation
 from .int_sort import IntSortOperation
@@ -25,4 +26,5 @@ ALL_OPERATIONS: list[Operation] = [
     Nplus1SequenceOperation(),
     IntSortOperation(),
     GenerateVocabOperation(),
+    ClearFormattingOperation(),
 ]
