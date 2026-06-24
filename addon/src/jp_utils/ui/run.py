@@ -24,9 +24,11 @@ from ..ops import (
     GenerateOperation,
     MediaOperation,
     SortOperation,
+    StatusOperation,
     plan_generation,
     plan_media,
     plan_operations,
+    plan_status,
     resolve_pipeline_steps,
 )
 from ..ops.notes import apply_plan, to_note_fields
@@ -38,17 +40,20 @@ def _note_deck(mw, note) -> str:
     return mw.col.decks.name(cards[0].did) if cards else ""
 
 
-def _gen_source_notes(mw, group: dict, config: AddonConfig) -> list:
-    """Snapshot the group's reviewed (-is:new) source notes for its generate ops.
+def _deck_source_notes(mw, group: dict, config: AddonConfig, only: str = "") -> list:
+    """Snapshot the group's (deck, note type) notes, optionally filtered by card state.
 
-    Generation reads every reviewed sentence in the (deck, note type), not just the
-    passed subset, so the first start-sweep backfills history; new cards are skipped
-    until first reviewed. Returns alias-keyed views (empty if the type is unmapped).
+    ``only`` narrows the search (``"-is:new"`` reviewed, ``"is:new"`` new, ``""`` all).
+    Generation and status-sync read the whole deck this way - not just the passed
+    subset - so the first start-sweep backfills history. Returns alias-keyed views
+    (empty if the note type is unmapped).
     """
     mapping = config.note_types.get(group["note_type"])
     if not mapping:
         return []
-    query = f'deck:"{group["deck"]}" note:"{group["note_type"]}" -is:new'
+    query = f'deck:"{group["deck"]}" note:"{group["note_type"]}"'
+    if only:
+        query += f" {only}"
     return [
         to_note_fields(int(nid), dict(mw.col.get_note(nid).items()), mapping)
         for nid in mw.col.find_notes(query)
@@ -98,24 +103,36 @@ def run_pipeline(
                 "media_ops": [c for c in resolved if isinstance(c.operation, MediaOperation)],
                 "sort_ops": [c for c in resolved if isinstance(c.operation, SortOperation)],
                 "gen_ops": [c for c in resolved if isinstance(c.operation, GenerateOperation)],
+                "status_ops": [c for c in resolved if isinstance(c.operation, StatusOperation)],
                 "notes": [],
-                "gen_sources": [],
+                "reviewed": [],
+                "status_seen": [],
+                "status_learnt": [],
                 "deck": pipeline.deck,
                 "note_type": note_type,
             }
         groups[key]["notes"].append(to_note_fields(int(nid), dict(note.items()), mapping))
         note_type_of[int(nid)] = note_type
 
-    # A generate op runs over the deck's own reviewed (-is:new) sentences, not the
-    # passed subset (like a sort op re-queries its deck), so gather those here.
+    # Generate and status ops run over the deck's own notes, not the passed subset
+    # (like a sort op re-queries its deck), so gather those here. Generation wants the
+    # reviewed (-is:new) sentences; status-sync classes words as `seen` (a new card not
+    # yet studied) or `learnt` (reviewed OR suspended - suspending is a deliberate "I
+    # know this").
     for group in groups.values():
         if group["gen_ops"]:
-            group["gen_sources"] = _gen_source_notes(mw, group, config)
+            group["reviewed"] = _deck_source_notes(mw, group, config, "-is:new")
+        if group["status_ops"]:
+            group["status_seen"] = _deck_source_notes(mw, group, config, "is:new -is:suspended")
+            group["status_learnt"] = _deck_source_notes(
+                mw, group, config, "(-is:new OR is:suspended)"
+            )
 
     work = [
         g
         for g in groups.values()
-        if (g["field_ops"] or g["media_ops"] or g["sort_ops"] or g["gen_ops"]) and g["notes"]
+        if (g["field_ops"] or g["media_ops"] or g["sort_ops"] or g["gen_ops"] or g["status_ops"])
+        and g["notes"]
     ]
     if not work:
         if not silent:
@@ -124,24 +141,39 @@ def run_pipeline(
 
     client = BackendClient(config.server_url, config.token)
 
-    def task() -> tuple[list, list, list]:
+    def task() -> tuple[list, list, list, int]:
         # The IO-bound backend work runs here: field ops compute their values, media
-        # ops fetch their bytes, and generate ops compute their new words. The actual
-        # writes (field, media attach, sort reposition, note creation) all run on the
-        # UI thread afterwards (Anki collection writes / they need fresh values).
-        plans, media_plans, gen_results = [], [], []
+        # ops fetch their bytes, generate ops compute their new words, and status ops
+        # derive + POST their vocab events (a remote store write, so it belongs in the
+        # background, not the UI thread). The Anki-collection writes (field, media
+        # attach, sort reposition, note creation) all run on the UI thread afterwards.
+        plans, media_plans, gen_results, status_entries = [], [], [], []
         for group in work:
             if group["field_ops"]:
                 plans.extend(plan_operations(client, group["field_ops"], group["notes"]))
             if group["media_ops"]:
                 media_plans.extend(plan_media(client, group["media_ops"], group["notes"]))
             if group["gen_ops"]:
-                gen_results.extend(plan_generation(client, group["gen_ops"], group["gen_sources"]))
-        return plans, media_plans, gen_results
+                gen_results.extend(plan_generation(client, group["gen_ops"], group["reviewed"]))
+            if group["status_ops"]:
+                status_entries.extend(
+                    plan_status(
+                        client,
+                        group["status_ops"],
+                        group["status_seen"],
+                        group["status_learnt"],
+                    )
+                )
+        # One batched, upgrade-only append for the whole sweep.
+        n_synced = 0
+        if status_entries:
+            resp = client.post("/v1/vocab/words", {"entries": status_entries})
+            n_synced = resp.get("recorded", 0)
+        return plans, media_plans, gen_results, n_synced
 
     def on_done(future) -> None:
         try:
-            plans, media_plans, gen_results = future.result()
+            plans, media_plans, gen_results, n_synced = future.result()
         except BackendError as exc:
             _report_failure(parent, exc.message, silent)
             return
@@ -160,7 +192,7 @@ def run_pipeline(
         n_fields += m_fields
         if on_applied is not None and (n_notes or n_cards or n_created):
             on_applied()
-        _report_done(parent, n_notes, n_fields, n_cards, n_created, silent)
+        _report_done(parent, n_notes, n_fields, n_cards, n_created, n_synced, silent)
 
     mw.taskman.run_in_background(task, on_done)
 
@@ -390,7 +422,7 @@ def _existing_word_index(
 
 
 def _report_done(
-    parent, n_notes: int, n_fields: int, n_cards: int, n_created: int, silent: bool
+    parent, n_notes: int, n_fields: int, n_cards: int, n_created: int, n_synced: int, silent: bool
 ) -> None:
     parts = []
     if n_notes:
@@ -399,6 +431,8 @@ def _report_done(
         parts.append(f"reordered {n_cards} card(s)")
     if n_created:
         parts.append(f"created {n_created} card(s)")
+    if n_synced:
+        parts.append(f"synced {n_synced} word(s)")
     if parts:
         tooltip("jp-utils: " + ", ".join(parts) + ".", parent=parent)
     elif not silent:

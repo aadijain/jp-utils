@@ -22,9 +22,11 @@ from .base import (
     Operation,
     ParamSpec,
     SortOperation,
+    StatusOperation,
     plan_generation,
     plan_media,
     plan_operations,
+    plan_status,
     resolve_params,
     resolve_pipeline_steps,
 )
@@ -48,9 +50,11 @@ __all__ = [
     "Operation",
     "ParamSpec",
     "SortOperation",
+    "StatusOperation",
     "plan_generation",
     "plan_media",
     "plan_operations",
+    "plan_status",
     "resolve_params",
     "resolve_pipeline_steps",
 ]
