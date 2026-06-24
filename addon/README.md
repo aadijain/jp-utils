@@ -37,6 +37,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
+| `clear-formatting` | Clear formatting | the `target` field (default `sentence`) | the same `target` field (strips HTML in place; local-only, no backend call) |
 
 Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort` and `generate-vocab` operate over the whole target deck, not just a selected subset.
 
