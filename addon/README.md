@@ -37,9 +37,10 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
+| `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); writes no field |
 | `clear-formatting` | Clear formatting | the `target` field (default `sentence`) | the same `target` field (strips HTML in place; local-only, no backend call) |
 
-Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort` and `generate-vocab` operate over the whole target deck, not just a selected subset.
+Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort`, `generate-vocab`, and `sync-word-status` operate over the whole target deck, not just a selected subset.
 
 ## Configuration
 
@@ -64,8 +65,9 @@ The operations compose into a single-user study loop:
 4. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
 5. The word enrichment ops (reading, definition, frequency, audio) enrich each new vocab card.
 6. `int-sort` orders the Word deck ascending by frequency rank.
+7. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`.
 
-Each new vocab card records an `encountered` event in the vocab store, so it is never regenerated.
+Because `generate-vocab` only creates cards for words still `unknown` or `seen`, a word already `learnt` (or one that already has a card) is never regenerated - the vocab store is the shared known-set both ops read and write.
 
 ## Development
 

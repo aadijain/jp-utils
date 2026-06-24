@@ -11,6 +11,7 @@ from .generate import GenerateVocabOperation
 from .int_sort import IntSortOperation
 from .nplus1 import Nplus1SequenceOperation
 from .sentence_furigana import SentenceFuriganaOperation
+from .sync_status import SyncWordStatusOperation
 from .word_audio import WordAudioOperation
 from .word_definition import WordDefinitionOperation
 from .word_furigana import WordFuriganaOperation
@@ -26,5 +27,6 @@ ALL_OPERATIONS: list[Operation] = [
     Nplus1SequenceOperation(),
     IntSortOperation(),
     GenerateVocabOperation(),
+    SyncWordStatusOperation(),
     ClearFormattingOperation(),
 ]
