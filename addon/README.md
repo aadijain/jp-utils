@@ -52,7 +52,7 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 
 ## Running pipelines
 
-- **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
+- **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), the **Tools -> jp-utils: Run all pipelines** action (runs every enabled pipeline over its deck at once), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
 - **Automatic** - a pipeline that opts into the **start** trigger runs silently when Anki starts.
 
 ## The mining loop
