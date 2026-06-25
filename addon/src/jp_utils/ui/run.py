@@ -218,6 +218,32 @@ def run_pipeline(
     mw.taskman.run_in_background(task, on_done)
 
 
+def run_all_pipelines(mw, parent, config: AddonConfig | None = None) -> None:
+    """Run every enabled, fully-targeted pipeline over the notes in its (deck, note type).
+
+    The "Run all pipelines" Tools action: gathers the notes of each enabled
+    pipeline (deduped across overlapping targets) and hands them to
+    :func:`run_pipeline`, which matches each note back to its pipeline. Enrichment
+    is idempotent, so this is a safe full sweep on demand.
+    """
+    if config is None:
+        config = load(mw)
+    note_ids: list = []
+    seen: set = set()
+    for pipeline in config.pipelines:
+        if not (pipeline.enabled and pipeline.deck and pipeline.note_type):
+            continue
+        query = f'deck:"{pipeline.deck}" note:"{pipeline.note_type}"'
+        for nid in mw.col.find_notes(query):
+            if nid not in seen:
+                seen.add(nid)
+                note_ids.append(nid)
+    if not note_ids:
+        tooltip("No enabled pipelines to run.", parent=parent)
+        return
+    run_pipeline(mw, note_ids, parent, config=config)
+
+
 def _warn_nothing(parent, skipped_no_pipeline: int, skipped_no_mapping: int) -> None:
     if skipped_no_mapping:
         showWarning(

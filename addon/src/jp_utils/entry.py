@@ -12,6 +12,7 @@ from .config import load, save
 from .ui import auto
 from .ui.browser import add_run_action
 from .ui.config_dialog import ConfigDialog
+from .ui.run import run_all_pipelines
 
 
 def _open_settings() -> None:
@@ -24,6 +25,10 @@ def setup() -> None:
     action = QAction("jp-utils Settings…", mw)
     action.triggered.connect(_open_settings)
     mw.form.menuTools.addAction(action)
+
+    run_all = QAction("jp-utils: Run all pipelines", mw)
+    run_all.triggered.connect(lambda: run_all_pipelines(mw, mw))
+    mw.form.menuTools.addAction(run_all)
 
     browser_menus_did_init.append(add_run_action)
     auto.register()
