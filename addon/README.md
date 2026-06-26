@@ -39,6 +39,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
 | `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); writes no field |
+| `set-field` | Set field | none (reads no field) | the `target` field, set to a fixed `value` (any string; empty value clears the field; local-only, no backend call) |
 | `clear-formatting` | Clear formatting | the `target` field (default `sentence`) | the same `target` field (strips HTML in place; local-only, no backend call) |
 
 Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort`, `generate-vocab`, and `sync-word-status` operate over the whole target deck, not just a selected subset.
