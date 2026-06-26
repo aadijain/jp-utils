@@ -8,6 +8,7 @@ from .base import Operation
 from .clear_formatting import ClearFormattingOperation
 from .frequency import FrequencyOperation
 from .generate import GenerateVocabOperation
+from .highlight import HighlightOperation
 from .int_sort import IntSortOperation
 from .nplus1 import Nplus1SequenceOperation
 from .sentence_furigana import SentenceFuriganaOperation
@@ -21,6 +22,7 @@ ALL_OPERATIONS: list[Operation] = [
     WordReadingOperation(),
     WordFuriganaOperation(),
     SentenceFuriganaOperation(),
+    HighlightOperation(),
     WordDefinitionOperation(),
     FrequencyOperation(),
     WordAudioOperation(),
