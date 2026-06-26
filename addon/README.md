@@ -31,6 +31,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `word-reading` | Fetch word reading | `word` | `word-reading` |
 | `word-furigana` | Add word furigana | `word` | `word-furigana` |
 | `sentence-furigana` | Add sentence furigana | `sentence` | `sentence-furigana` (HTML-aware) |
+| `highlight` | Highlight word in sentence | `word`, `sentence` | `sentence` (wraps the word in `<b>` in place; inflection-aware, preserves furigana) |
 | `word-definition` | Fetch definition | `word` | `definition` (sense-aware; format/POS/examples/readings toggles) |
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
