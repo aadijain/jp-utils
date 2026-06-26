@@ -22,6 +22,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
 | `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key) |
 | `POST /content-words` | The vocabulary words of a sentence (content-word filtered, each with its in-context reading) - used to generate vocab cards |
+| `POST /locate` | Find a word in a sentence by its dictionary form (inflection-aware), returning the sentence split into segments with the match flagged - used to highlight the mined word |
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).

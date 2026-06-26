@@ -15,6 +15,7 @@ from app.text.audio import AudioProxy
 from app.text.convert import convert
 from app.text.frequency import lookup_frequency
 from app.text.furigana import annotate
+from app.text.locate import locate
 from app.text.meaning import lookup_meaning
 from app.text.normalize import normalize
 from app.text.spacing import space_text
@@ -32,6 +33,8 @@ from shared.text import (
     FuriganaRequest,
     FuriganaResponse,
     FuriganaText,
+    LocateRequest,
+    LocateResponse,
     MeaningRequest,
     MeaningResponse,
     NormalizeRequest,
@@ -162,6 +165,21 @@ def normalize_text(
     """Deinflect each surface to its canonical lemma + reading. Aligned with `req.surfaces`."""
     results = [normalize(tokenizer, surface, req.mode) for surface in req.surfaces]
     return NormalizeResponse(results=results)
+
+
+@router.post("/locate")
+def locate_word(
+    req: LocateRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
+) -> LocateResponse:
+    """Locate each query's word in its sentence. Results aligned with `req.queries`.
+
+    Inflection-aware (matches by deinflected lemma, not literal substring); breaks
+    the sentence into segments with the first match flagged. The caller is expected
+    to pass plain text (markup stripped) and to reattach any markup itself.
+    """
+    results = [locate(tokenizer, q.text, q.word, req.mode) for q in req.queries]
+    return LocateResponse(results=results)
 
 
 @router.post("/audio")
