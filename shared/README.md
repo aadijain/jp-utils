@@ -15,7 +15,7 @@ No third-party imports may appear here. That constraint is what lets one definit
 
 | Module | Contract for |
 |---|---|
-| `text.py` | tokenize, space, furigana, convert, meaning, frequency, normalize, content-words, audio (`/v1/text/*`) |
+| `text.py` | tokenize, space, furigana, convert, meaning, frequency, normalize, content-words, locate, audio (`/v1/text/*`) |
 | `vocab.py` | record words, filter-by-status, status, export; the `VocabWord` / `WordStatus` / `VocabAction` types (`/v1/vocab/*`) |
 | `mining.py` | n+1 sort: `MiningSentence`, `SentenceScore`, `Nplus` (`/v1/mining/*`) |
 | `health.py` | `HealthResponse` / `DictStatus` for the public `/health` endpoint |
