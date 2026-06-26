@@ -227,6 +227,38 @@ class NormalizeResponse:
 
 
 @dataclass
+class LocateSegment:
+    text: str  # a contiguous slice of the input text
+    match: bool = False  # True for the slice covering the located word
+
+
+@dataclass
+class LocateResult:
+    text: str  # echoes the input text
+    # the input text broken into contiguous segments (concatenate to reproduce
+    # `text`); the first segment covering the located word has `match=True`. When
+    # the word isn't found there is a single, unmatched segment of the whole text.
+    segments: list[LocateSegment] = field(default_factory=list)
+
+
+@dataclass
+class LocateQuery:
+    text: str  # the sentence to search (plain text; the caller strips markup)
+    word: str  # the word to locate, matched by lemma so inflections are found
+
+
+@dataclass
+class LocateRequest:
+    queries: list[LocateQuery]  # batch-first
+    mode: SplitMode = SplitMode.C
+
+
+@dataclass
+class LocateResponse:
+    results: list[LocateResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
 class ContentWordsRequest:
     texts: list[str]  # batch-first: extract content words from many texts in one request
     mode: SplitMode = SplitMode.C  # only C is cached (the tokenization-cache assumption)
