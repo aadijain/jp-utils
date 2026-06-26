@@ -12,6 +12,7 @@ from .highlight import HighlightOperation
 from .int_sort import IntSortOperation
 from .nplus1 import Nplus1SequenceOperation
 from .sentence_furigana import SentenceFuriganaOperation
+from .set_field import SetFieldOperation
 from .sync_status import SyncWordStatusOperation
 from .word_audio import WordAudioOperation
 from .word_definition import WordDefinitionOperation
@@ -30,5 +31,6 @@ ALL_OPERATIONS: list[Operation] = [
     IntSortOperation(),
     GenerateVocabOperation(),
     SyncWordStatusOperation(),
+    SetFieldOperation(),
     ClearFormattingOperation(),
 ]
