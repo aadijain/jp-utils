@@ -3,6 +3,7 @@
 import pytest
 
 from app.text.inflection import (
+    absorbed_end,
     deinflect,
     is_inflection_tail,
     is_word_head,
@@ -88,3 +89,36 @@ def test_deinflect_folds_the_span_and_conjugates_only_its_end(
 ) -> None:
     got_lemma, got_reading, _ = deinflect(tokenizer, _tok(tokenizer, surface))
     assert (got_lemma, got_reading) == (lemma, reading)
+
+
+@pytest.mark.parametrize(
+    ("sentence", "word", "expected"),
+    [
+        # 動詞 / 形容詞 heads absorb their whole conjugation...
+        ("ご飯を食べている", "食べる", "食べている"),
+        # ...but stop at a particle that attaches to a finished clause.
+        ("残念だね〜惜しかったけど", "惜しい", "惜しかった"),
+        # A copula is not part of a plain noun.
+        ("俺は新人だ", "新人", "新人"),
+        # 行く / ある are 非自立可能 by possibility, not by use.
+        ("保健室行くところ", "保健室", "保健室"),
+        ("たくさんあるんだから", "たくさん", "たくさん"),
+        # A na-adjective DOES inflect through the copula.
+        ("広大な大陸", "広大", "広大な"),
+        # A サ変 noun absorbs the light verb that is its own verb form.
+        ("こいつらを攻略していた", "攻略", "攻略していた"),
+        ("好きを共有できる", "共有", "共有できる"),
+        # ...but a helper verb after a noun+copula starts a new word.
+        ("挑発されて本気になった", "本気", "本気"),
+    ],
+)
+def test_absorbed_end_is_head_aware(
+    tokenizer: Tokenizer, sentence: str, word: str, expected: str
+) -> None:
+    tokens = _tok(tokenizer, sentence)
+    i = next(
+        i
+        for i, t in enumerate(tokens)
+        if t.dictionary_form == word or sentence[t.start :].startswith(word)
+    )
+    assert sentence[tokens[i].start : absorbed_end(tokens, i)] == expected

@@ -5,8 +5,8 @@ different mix of them:
 
 - **Where does the word end?** A segmentation question. Sudachi splits a
   conjugated word into a stem plus bound morphemes (食べた -> 食べ + た), so a
-  word occupies a *span* of tokens, not one token. :func:`strip_tails` answers
-  it for a surface asserted to be one word.
+  word occupies a *span* of tokens, not one token. :func:`absorbed_end` answers
+  this for a word sitting inside a longer sentence.
 - **What is the dictionary form of this span?** An inflection question.
   :func:`deinflect` answers it, folding the span's non-inflectional morphemes
   into the lemma and dropping the conjugation.
@@ -17,9 +17,15 @@ answers the first question with "one morpheme", which is wrong for compounds
 caller cannot tell a truncation from a clean reduction. :func:`is_word_head`
 gives callers the one signal the tokenizer can still get wrong after that.
 
-:func:`is_inflection_tail` is context-free: its caller has asserted the span is
-a single word, so a trailing auxiliary is by construction that word's
-conjugation.
+The two questions also want *different* tail rules, which is why there are two
+predicates rather than one:
+
+- :func:`is_inflection_tail` is context-free. Its caller has asserted the span
+  is a single word, so a trailing auxiliary is by construction that word's
+  conjugation.
+- :func:`absorbed_end` is head-aware. In a sentence the same auxiliary may
+  belong to something else entirely: だ after a noun is a copula joining two
+  clause parts (新人だ), not part of the noun.
 """
 
 from collections.abc import Sequence
@@ -32,6 +38,9 @@ from shared.text import Token
 # conjunctive particles that attach to a *finished* clause instead - から, が,
 # けど, し, と, のに, ので - end the word and must not be absorbed into it.
 TAIL_PARTICLES = frozenset({"て", "で", "ば", "ちゃ", "じゃ", "たり", "つつ", "ながら"})
+
+# Light verbs that carry a サ変 noun's own verb form (攻略する, 共有できる).
+LIGHT_VERBS = frozenset({"する", "できる", "なさる", "いたす"})
 
 # Top-level POS that can begin a word. Everything else - 助詞, 助動詞, 接尾辞,
 # 記号, 補助記号, 空白 - is bound or punctuation, so a span headed by one is a
@@ -71,6 +80,50 @@ def is_inflection_tail(token: Token) -> bool:
     if head in _INFLECTABLE and len(pos) > 1 and pos[1].startswith("非自立"):
         return True
     return False
+
+
+def _is_copula(token: Token) -> bool:
+    """True for な / に / だ - the copula that inflects a na-adjective."""
+    return _top(token) == "助動詞" and token.dictionary_form == "だ"
+
+
+def _is_light_verb(token: Token) -> bool:
+    return _top(token) == "動詞" and token.dictionary_form in LIGHT_VERBS
+
+
+def absorbed_end(tokens: Sequence[Token], i: int) -> int:
+    """The char offset where the word headed by ``tokens[i]`` ends.
+
+    What may attach depends on the head, because the same morpheme belongs to
+    different things after different words:
+
+    - 動詞 / 形容詞 absorb their full conjugation (:func:`is_inflection_tail`).
+    - 形状詞 absorb only the copula that inflects them (広大な, 明確に) and stop
+      there - a helper verb after that starts a new word (本気に **なった**).
+    - a サ変 noun absorbs the light verb that is its own verb form (攻略する,
+      共有できる) and then conjugates like a 動詞.
+    - every other head absorbs nothing. A copula after a plain noun is not part
+      of the noun (新人だ, 道理でしょ), and 行く/ある are tagged 非自立可能 by
+      possibility, not by use (保健室 **行く**, たくさん **ある**).
+    """
+    head = tokens[i]
+    top = _top(head)
+    end = head.end
+    j = i + 1
+    if top == "名詞" and "サ変可能" in head.part_of_speech:
+        if j < len(tokens) and _is_light_verb(tokens[j]):
+            end = tokens[j].end
+            j += 1
+            top = "動詞"
+    if top in _INFLECTABLE:
+        while j < len(tokens) and is_inflection_tail(tokens[j]):
+            end = tokens[j].end
+            j += 1
+    elif top == "形状詞":
+        while j < len(tokens) and _is_copula(tokens[j]):
+            end = tokens[j].end
+            j += 1
+    return end
 
 
 def strip_tails(tokens: Sequence[Token]) -> Sequence[Token]:
@@ -129,8 +182,10 @@ def deinflect(tokenizer: Tokenizer, tokens: Sequence[Token]) -> tuple[str, str, 
 
 
 __all__ = [
+    "LIGHT_VERBS",
     "TAIL_PARTICLES",
     "WORD_HEADS",
+    "absorbed_end",
     "deinflect",
     "is_inflection_tail",
     "is_word_head",
