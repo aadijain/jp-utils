@@ -50,6 +50,10 @@ ALIASES: tuple[str, ...] = (
     "sentence-audio",
     "sentence-image",
     "alt-definition",
+    # Free-form user aliases: ten unnamed slots the user can map to arbitrary
+    # fields and reference from any op's field params. Unseeded (no DEFAULT_FIELDS
+    # entry), so they start unassigned until the user maps them per note type.
+    *(f"var{i}" for i in range(10)),
 )
 
 # Default alias -> field map seeded for the Lapis mining note type (seed only;
