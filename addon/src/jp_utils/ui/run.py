@@ -346,6 +346,13 @@ def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: d
         order = [order[p] for p in ranked]
 
     ordered_cids = [cards[i].id for i in order]
+    # No-op when the new cards are already in this order: reposition_new_cards rewrites
+    # `due` (and bumps mod/usn for sync) on EVERY passed card, so calling it on an
+    # already-sorted deck dirties every new card for nothing. The current visual order
+    # is the cards sorted by their existing `due` position.
+    current_cids = [c.id for c in sorted(cards, key=lambda c: c.due)]
+    if ordered_cids == current_cids:
+        return 0
     # reposition_new_cards(card_ids, starting_from, step_size, randomize, shift_existing)
     mw.col.sched.reposition_new_cards(ordered_cids, 1, 1, False, True)
     return len(ordered_cids)
