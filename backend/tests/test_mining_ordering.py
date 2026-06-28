@@ -24,6 +24,18 @@ def test_rank_tiebreak_prefers_more_frequent_unknown():
     assert order == [1, 0]
 
 
+def test_rank_tiebreak_uses_least_frequent_unknown():
+    # Equal unknown counts -> compare each sentence's *least frequent* unknown
+    # (its max rank); the smaller max wins. sentA's worst is 1000, sentB's is
+    # 1500, so sentA comes first even though sentB owns the single most-frequent
+    # word (rank 100, which the old min-rank tiebreak would have preferred).
+    sentA = ["a300", "a1000"]
+    sentB = ["b100", "b1500"]
+    ranks = {"a300": 300, "a1000": 1000, "b100": 100, "b1500": 1500}
+    order = nplus1_order([sentB, sentA], known=set(), ranks=ranks)
+    assert order == [1, 0]  # sentA (index 1) before sentB (index 0)
+
+
 def test_length_tiebreak_prefers_shorter_sentence():
     # Both introduce one unknown (w1), equal rank; the shorter sentence wins.
     # "known" is shared so it doesn't count toward the unknown total.
