@@ -11,10 +11,11 @@ sentence decrements that count for every other sentence sharing its words (walke
 via a word -> sentences index). At each step the min-key sentence is placed, where
 the key is the tie-break tuple
 
-    (unknown_count, min JPDB rank of the unknowns, distinct-word count, mined order)
+    (unknown_count, max JPDB rank of the unknowns, distinct-word count, mined order)
 
-- fewest unknowns, then the sentence whose new word is most frequent (lowest
-rank), then the shorter sentence, then original order. The unknown count only ever
+- fewest unknowns, then the sentence whose *least frequent* new word is most
+frequent (smallest max rank), then the shorter sentence, then original order. The
+unknown count only ever
 shrinks as words are learnt, so the freshest heap entry for a sentence always has
 the smallest key; stale entries are skipped via a `placed` flag (lazy deletion).
 
@@ -55,8 +56,8 @@ def nplus1_order(
 
     def key(i: int) -> tuple[int, float, int, int]:
         u = unknown[i]
-        min_rank = min((ranks.get(word, _INF) for word in u), default=_INF)
-        return (len(u), min_rank, len(lemma_sets[i]), i)
+        max_rank = max((ranks.get(word, _INF) for word in u), default=_INF)
+        return (len(u), max_rank, len(lemma_sets[i]), i)
 
     heap = [(key(i), i) for i in range(n)]
     heapq.heapify(heap)
