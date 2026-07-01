@@ -32,6 +32,7 @@ from ..ops import (
     resolve_pipeline_steps,
 )
 from ..ops.notes import apply_plan, to_note_fields
+from ..sequencing import stable_sequence
 
 
 def _note_deck(mw, note) -> str:
@@ -328,11 +329,19 @@ def _apply_sorts(mw, work: list[dict], config: AddonConfig) -> int:
 
 
 def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: dict) -> int:
-    """Order the (deck, note_type)'s NEW cards by the sort op(s) and reposition them.
+    """Order the (deck, note_type)'s NEW cards by the sort op(s), moving only movers.
 
     Only new cards are touched (``is:new``); review/learning cards are
     date-scheduled and left alone. With multiple sort ops the FIRST listed is the
     primary key (applied as the outermost stable sort).
+
+    Rather than ``reposition_new_cards`` - which rewrites ``due`` (and bumps mod/usn
+    for sync) on EVERY passed card, dirtying the whole deck on any single move - we
+    reuse :func:`jp_utils.sequencing.stable_sequence` on the ``due`` axis: cards
+    already in ascending order keep their ``due``; only the ones out of place are
+    slotted into the gaps and rewritten via ``update_cards``. Ordering by ``due`` then
+    yields the target order. Returns the number of cards actually moved (0 = already
+    in order). See ``memory/gotchas.md`` for the cross-note-type ``due``-tie caveat.
     """
     cids = list(mw.col.find_cards(f'deck:"{deck}" note:"{note_type}" is:new'))
     if not cids:
@@ -345,17 +354,17 @@ def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: d
         ranked = configured.operation.order([sources[i] for i in order], configured.params)
         order = [order[p] for p in ranked]
 
-    ordered_cids = [cards[i].id for i in order]
-    # No-op when the new cards are already in this order: reposition_new_cards rewrites
-    # `due` (and bumps mod/usn for sync) on EVERY passed card, so calling it on an
-    # already-sorted deck dirties every new card for nothing. The current visual order
-    # is the cards sorted by their existing `due` position.
-    current_cids = [c.id for c in sorted(cards, key=lambda c: c.due)]
-    if ordered_cids == current_cids:
+    assigned = stable_sequence(order, [c.due for c in cards])
+    moved = []
+    for index, new_due in assigned.items():
+        card = cards[index]
+        if card.due != new_due:
+            card.due = new_due
+            moved.append(card)
+    if not moved:
         return 0
-    # reposition_new_cards(card_ids, starting_from, step_size, randomize, shift_existing)
-    mw.col.sched.reposition_new_cards(ordered_cids, 1, 1, False, True)
-    return len(ordered_cids)
+    mw.col.update_cards(moved)
+    return len(moved)
 
 
 def _apply_generation(mw, gen_results: list, config: AddonConfig) -> int:
