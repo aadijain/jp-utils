@@ -8,13 +8,13 @@
       "word-reading": "ExpressionReading",
       "word-furigana": "ExpressionFurigana",
       "sentence-furigana": "SentenceFurigana",
-      "definition": "MainDefinition",
+      "word-meaning": "MainDefinition",
       "frequency": "FreqSort",
       "word-audio": "ExpressionAudio",
       "rank": "FreqSort",
       "sentence-audio": "SentenceAudio",
       "sentence-image": "Picture",
-      "alt-definition": "Glossary"
+      "sentence-meaning": "Glossary"
     }
   },
   "pipelines": []

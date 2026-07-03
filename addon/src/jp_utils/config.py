@@ -29,7 +29,7 @@ DEFAULT_SERVER_URL = "http://localhost:9618"
 # Every alias an operation may read or write, bound to a note field by the
 # per-note-type map. One flat namespace: an alias is the same logical field
 # whether read or written (e.g. `word-reading` is written by the word-reading op
-# and read by the definition/audio ops; `rank` is the integer the int-sort op
+# and read by the word-meaning/audio ops; `rank` is the integer the int-sort op
 # orders new cards by - seeded onto the same Lapis `FreqSort` field as `frequency`
 # so sorting works out of the box, but the user may remap it). Direction is a
 # property of each operation (`input_aliases` / `output_alias`), not of the field
@@ -40,7 +40,7 @@ ALIASES: tuple[str, ...] = (
     "word-reading",
     "word-furigana",
     "sentence-furigana",
-    "definition",
+    "word-meaning",
     "frequency",
     "word-audio",
     "rank",
@@ -49,7 +49,7 @@ ALIASES: tuple[str, ...] = (
     # note - copied 1:1 by alias only when mapped on BOTH note types.
     "sentence-audio",
     "sentence-image",
-    "alt-definition",
+    "sentence-meaning",
     # Free-form user aliases: ten unnamed slots the user can map to arbitrary
     # fields and reference from any op's field params. Unseeded (no DEFAULT_FIELDS
     # entry), so they start unassigned until the user maps them per note type.
@@ -65,7 +65,7 @@ DEFAULT_FIELDS: dict[str, str] = {
     "word-reading": "ExpressionReading",
     "word-furigana": "ExpressionFurigana",
     "sentence-furigana": "SentenceFurigana",
-    "definition": "MainDefinition",
+    "word-meaning": "MainDefinition",
     "frequency": "FreqSort",
     "word-audio": "ExpressionAudio",
     "rank": "FreqSort",
@@ -73,7 +73,7 @@ DEFAULT_FIELDS: dict[str, str] = {
     # note type is NOT seeded (user maps it by hand); only the Lapis side here.
     "sentence-audio": "SentenceAudio",
     "sentence-image": "Picture",
-    "alt-definition": "Glossary",
+    "sentence-meaning": "Glossary",
 }
 
 # Seeded note type (user-overridable). Only the note-type STRING is Lapis-bound.

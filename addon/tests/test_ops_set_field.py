@@ -6,9 +6,9 @@ from jp_utils.ops.set_field import SetFieldOperation
 
 def test_io_spec_targets_the_chosen_alias():
     op = SetFieldOperation()
-    assert op.io_spec({"target": "definition"}).outputs == ("definition",)
+    assert op.io_spec({"target": "word-meaning"}).outputs == ("word-meaning",)
     # No required inputs - the op applies to every note.
-    assert op.io_spec({"target": "definition"}).required_inputs == ()
+    assert op.io_spec({"target": "word-meaning"}).required_inputs == ()
     # Unconfigured target writes nothing.
     assert op.io_spec().outputs == ()
 
