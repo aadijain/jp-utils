@@ -38,7 +38,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
-| `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); writes no field |
+| `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); a card tagged `jp::learnt` / `jp::ignored` / `jp::blacklisted` instead forces that status, overriding its card state; writes no field |
 | `set-field` | Set field | none (reads no field) | the `target` field, set to a fixed `value` (any string; empty value clears the field; local-only, no backend call) |
 | `clear-formatting` | Clear formatting | the `target` field (default `sentence`) | the same `target` field (strips HTML in place; local-only, no backend call) |
 | `spacing` | Space words in sentence | the `target` field (default `sentence`) | the same `target` field (inserts a `separator` at word boundaries in place; for plain-text, non-Lapis sentences) |
@@ -68,7 +68,7 @@ The operations compose into a single-user study loop:
 4. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
 5. The word enrichment ops (reading, definition, frequency, audio) enrich each new vocab card.
 6. `int-sort` orders the Word deck ascending by frequency rank.
-7. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`.
+7. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`. Tagging a card `jp::learnt`, `jp::ignored`, or `jp::blacklisted` forces that status regardless of the card's state.
 
 Because `generate-vocab` only creates cards for words still `unknown` or `seen`, a word already `learnt` (or one that already has a card) is never regenerated - the vocab store is the shared known-set both ops read and write.
 
