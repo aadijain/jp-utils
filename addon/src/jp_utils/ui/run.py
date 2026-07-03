@@ -59,6 +59,7 @@ class _RunGroup:
     reviewed: list[NoteFields] = field(default_factory=list)
     status_seen: list[NoteFields] = field(default_factory=list)
     status_learnt: list[NoteFields] = field(default_factory=list)
+    status_tagged: dict[str, list[NoteFields]] = field(default_factory=dict)
 
     @property
     def has_ops(self) -> bool:
@@ -91,6 +92,14 @@ def _deck_source_notes(mw, group: _RunGroup, config: AddonConfig, only: str = ""
         to_note_fields(int(nid), dict(mw.col.get_note(nid).items()), mapping)
         for nid in mw.col.find_notes(query)
     ]
+
+
+def _status_tag_actions(status_ops: list) -> dict[str, str]:
+    """The merged tag -> vocab-action map across a group's status ops (usually one)."""
+    merged: dict[str, str] = {}
+    for item in status_ops:
+        merged.update(getattr(item.operation, "tag_actions", {}))
+    return merged
 
 
 def run_pipeline(
@@ -147,13 +156,26 @@ def run_pipeline(
     # (like a sort op re-queries its deck), so gather those here. Generation wants the
     # reviewed (-is:new) sentences; status-sync classes words as `seen` (a new card not
     # yet studied) or `learnt` (reviewed OR suspended - suspending is a deliberate "I
-    # know this").
+    # know this"). Cards carrying a priority tag are pulled out separately and
+    # excluded from both auto buckets, so a tagged word's forced action wins.
     for group in groups.values():
         if group.gen_ops:
             group.reviewed = _deck_source_notes(mw, group, config, "-is:new")
         if group.status_ops:
-            group.status_seen = _deck_source_notes(mw, group, config, "is:new -is:suspended")
-            group.status_learnt = _deck_source_notes(mw, group, config, "(-is:new OR is:suspended)")
+            tag_actions = _status_tag_actions(group.status_ops)
+            untagged = "".join(f" -tag:{tag}" for tag in tag_actions)
+            group.status_seen = _deck_source_notes(
+                mw, group, config, f"is:new -is:suspended{untagged}"
+            )
+            group.status_learnt = _deck_source_notes(
+                mw, group, config, f"(-is:new OR is:suspended){untagged}"
+            )
+            tagged: dict[str, list] = {}
+            for tag, action in tag_actions.items():
+                notes = _deck_source_notes(mw, group, config, f"tag:{tag}")
+                if notes:
+                    tagged.setdefault(action, []).extend(notes)
+            group.status_tagged = tagged
 
     work = [g for g in groups.values() if g.has_ops and g.notes]
     if not work:
@@ -169,7 +191,8 @@ def run_pipeline(
         # derive + POST their vocab events (a remote store write, so it belongs in the
         # background, not the UI thread). The Anki-collection writes (field, media
         # attach, sort reposition, note creation) all run on the UI thread afterwards.
-        plans, media_plans, gen_results, status_entries = [], [], [], []
+        plans, media_plans, gen_results = [], [], []
+        auto_entries, tag_entries = [], []
         for group in work:
             if group.field_ops:
                 plans.extend(plan_operations(client, group.field_ops, group.notes))
@@ -178,19 +201,24 @@ def run_pipeline(
             if group.gen_ops:
                 gen_results.extend(plan_generation(client, group.gen_ops, group.reviewed))
             if group.status_ops:
-                status_entries.extend(
-                    plan_status(
-                        client,
-                        group.status_ops,
-                        group.status_seen,
-                        group.status_learnt,
-                    )
+                auto, tagged = plan_status(
+                    client,
+                    group.status_ops,
+                    group.status_seen,
+                    group.status_learnt,
+                    group.status_tagged,
                 )
-        # One batched, upgrade-only append for the whole sweep.
+                auto_entries.extend(auto)
+                tag_entries.extend(tagged)
+        # Card-state events append upgrade-only; tag events are forced (they take
+        # priority). Two batched appends for the whole sweep.
         n_synced = 0
-        if status_entries:
-            resp = client.post("/v1/vocab/words", {"entries": status_entries})
-            n_synced = resp.get("recorded", 0)
+        if auto_entries:
+            n_synced += client.post("/v1/vocab/words", {"entries": auto_entries}).get("recorded", 0)
+        if tag_entries:
+            n_synced += client.post("/v1/vocab/words", {"entries": tag_entries, "force": True}).get(
+                "recorded", 0
+            )
         return plans, media_plans, gen_results, n_synced
 
     def on_done(future) -> None:

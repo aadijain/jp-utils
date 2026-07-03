@@ -16,9 +16,20 @@ the **reading** is taken from the card's own ``word-reading`` field when it has 
 Both the lemma and reading key the vocab event ``(lemma, reading)``. ``word-reading``
 is an input but optional - only ``word`` is required, so a card not yet enriched with
 a reading still syncs. It runs over the
-deck's notes on the start-sweep (no reviewer hook - the "status axis" decision); events
-are ``anki``-sourced and appended upgrade-only, so the sweep is idempotent and a
-still-new card never downgrades a word already reviewed into ``learnt``.
+deck's notes on the start-sweep (no reviewer hook - the "status axis" decision); the
+card-state events are ``anki``-sourced and appended upgrade-only, so the sweep is
+idempotent and a still-new card never downgrades a word already reviewed into
+``learnt``.
+
+**Custom tags.** A card carrying one of the fixed :data:`TAG_ACTIONS` tags
+forces its word to the mapped action (``learnt`` / ``ignored`` / ``blacklisted``),
+overriding whatever its card state would confer - tags take priority. ``ignored`` and
+``blacklisted`` are terminal states unreachable from card state; a ``learnt`` tag
+force-marks a word known even while its card is still new. Tag events are posted
+**forced** (a deliberate action, bypassing the upgrade-only guard), so unlike the
+card-state events they re-append on every sweep - benign in the append-only store.
+The wiring excludes tagged cards from the seen/learnt buckets, so a card is either
+tag-driven or state-driven, never both.
 """
 
 from ..client import BackendClient
@@ -30,6 +41,15 @@ from .nplus1 import strip_markup
 # status/source axes are the literal VocabAction/VocabSource values.
 _SOURCE_ANKI = "anki"
 
+# Fixed Anki tag -> forced vocab action. Hierarchical `jp::*` tags keep them
+# grouped in Anki's tag sidebar and search cleanly (`tag:jp::learnt`). A card with
+# one of these overrides its card-state classification.
+TAG_ACTIONS = {
+    "jp::learnt": "learnt",
+    "jp::ignored": "ignored",
+    "jp::blacklisted": "blacklisted",
+}
+
 
 class SyncWordStatusOperation(StatusOperation):
     key = "sync-word-status"
@@ -40,24 +60,32 @@ class SyncWordStatusOperation(StatusOperation):
     # mapping-validated and doesn't gate applicability - the framework handles both.
     input_aliases = ("word",)
     optional_input_aliases = ("word-reading",)
+    tag_actions = TAG_ACTIONS
 
     def collect(
         self,
         client: BackendClient,
         seen_sources: list[dict[str, str]],
         learnt_sources: list[dict[str, str]],
-    ) -> list[dict]:
-        # Seen then learnt, paired with the status each card state confers.
-        sources = list(seen_sources) + list(learnt_sources)
-        actions = ["seen"] * len(seen_sources) + ["learnt"] * len(learnt_sources)
-        surfaces = [strip_markup(s.get("word", "")) for s in sources]
-        if not surfaces:
-            return []
-        # One batched deinflect for the lemma (+ a fallback reading).
+        tagged_sources: dict[str, list[dict[str, str]]],
+    ) -> tuple[list[dict], list[dict]]:
+        # Each source paired with (action, force): card state is upgrade-only, tags
+        # are forced (they take priority). One `force` flag per source lets the single
+        # deinflect below cover every bucket, then splits the events back out.
+        triples: list[tuple[dict[str, str], str, bool]] = []
+        triples += [(s, "seen", False) for s in seen_sources]
+        triples += [(s, "learnt", False) for s in learnt_sources]
+        for action, sources in tagged_sources.items():
+            triples += [(s, action, True) for s in sources]
+        if not triples:
+            return [], []
+        # One batched deinflect for every source's lemma (+ a fallback reading).
+        surfaces = [strip_markup(s.get("word", "")) for s, _, _ in triples]
         resp = client.post("/v1/text/normalize", {"surfaces": surfaces})
         results = resp.get("results", [])
-        entries = []
-        for source, result, action in zip(sources, results, actions, strict=True):
+        unforced: list[dict] = []
+        forced: list[dict] = []
+        for (source, action, force), result in zip(triples, results, strict=True):
             lemma = result.get("lemma", "")
             if not lemma:
                 continue
@@ -65,12 +93,11 @@ class SyncWordStatusOperation(StatusOperation):
             reading = strip_markup(source.get("word-reading", "")).strip() or result.get(
                 "reading", ""
             )
-            entries.append(
-                {
-                    "lemma": lemma,
-                    "reading": reading,
-                    "action": action,
-                    "source": _SOURCE_ANKI,
-                }
-            )
-        return entries
+            entry = {
+                "lemma": lemma,
+                "reading": reading,
+                "action": action,
+                "source": _SOURCE_ANKI,
+            }
+            (forced if force else unforced).append(entry)
+        return unforced, forced

@@ -343,13 +343,19 @@ class StatusOperation(Operation, ABC):
     the source note but a backend side effect - here an append to ``/v1/vocab/words``
     that advances a word's status from how far its card has progressed. So the wiring
     splits the (deck, note type)'s notes by status - the words it considers merely
-    ``seen`` vs ``learnt`` - and hands both to :meth:`collect`, which derives the
-    events; the wiring posts them in one batched, upgrade-only append, so re-running
-    the start-sweep is idempotent (the store no-ops a non-raising event, and ``seen``
-    never downgrades an already-``learnt`` word).
+    ``seen`` vs ``learnt`` - plus any carrying a configured priority tag, and hands
+    them all to :meth:`collect`, which derives the events. The card-state events are
+    posted upgrade-only (idempotent: the store no-ops a non-raising event, and
+    ``seen`` never downgrades an already-``learnt`` word); the tag events are posted
+    forced (a deliberate action) so they override card state.
+
+    ``tag_actions`` maps a fixed Anki tag -> the vocab action a card carrying it
+    forces its word to (empty = the op has no tag mapping). The wiring reads it to
+    query the tagged cards and to exclude them from the auto seen/learnt buckets.
     """
 
     io_verb = "(update vocab store)"
+    tag_actions: dict[str, str] = {}
 
     @abstractmethod
     def collect(
@@ -357,13 +363,16 @@ class StatusOperation(Operation, ABC):
         client: BackendClient,
         seen_sources: list[dict[str, str]],
         learnt_sources: list[dict[str, str]],
-    ) -> list[dict]:
-        """Vocab events for these sources, as ``RecordEntry`` dicts.
+        tagged_sources: dict[str, list[dict[str, str]]],
+    ) -> tuple[list[dict], list[dict]]:
+        """Vocab events for these sources, split into (unforced, forced) batches.
 
-        Each entry is ``{"lemma", "reading", "action", "source"}``. ``seen_sources``
-        are the alias-keyed views of the notes the wiring classed as ``seen``,
-        ``learnt_sources`` the ``learnt`` ones. The return is a flat list (not aligned
-        to either input).
+        Each event is a ``RecordEntry`` dict ``{"lemma", "reading", "action",
+        "source"}``. ``seen_sources`` / ``learnt_sources`` are the alias-keyed views
+        of the notes the wiring classed as ``seen`` / ``learnt`` by card state - their
+        events go in the **unforced** (upgrade-only) list. ``tagged_sources`` maps a
+        vocab action -> the notes a priority tag assigned it; their events go in the
+        **forced** list so they override card state. Both returns are flat lists.
         """
 
 
@@ -517,25 +526,34 @@ def plan_status(
     configured: list[ConfiguredOp],
     seen_notes: list[NoteFields],
     learnt_notes: list[NoteFields],
-) -> list[dict]:
+    tagged_notes: dict[str, list[NoteFields]],
+) -> tuple[list[dict], list[dict]]:
     """Collect the vocab events each :class:`StatusOperation` derives from its notes.
 
     The background (IO-bound) half of a status sync: one batched backend pass per op
     (deinflect each word to its lemma) to derive the events, skipping notes missing a
     required input. ``seen_notes``/``learnt_notes`` are the (deck, note type)'s notes
-    already classed onto the seen/learnt axis by the wiring. Returns a flat list of
-    ``RecordEntry`` dicts the wiring posts to ``/v1/vocab/words`` in one append (the
-    store guards them upgrade-only). Non-status ops are ignored, so this is safe to
-    call with a pipeline's full op list.
+    classed onto the seen/learnt axis by card state; ``tagged_notes`` maps a vocab
+    action -> the notes a priority tag assigned it. Returns ``(unforced, forced)``
+    lists of ``RecordEntry`` dicts: the wiring posts the first upgrade-only and the
+    second forced. Non-status ops are ignored, so this is safe to call with a
+    pipeline's full op list.
     """
-    entries: list[dict] = []
+    unforced: list[dict] = []
+    forced: list[dict] = []
     for item in configured:
         op = item.operation
         if not isinstance(op, StatusOperation):
             continue
         seen_app = [n.fields for n in seen_notes if op.applicable(n.fields, item.params)]
         learnt_app = [n.fields for n in learnt_notes if op.applicable(n.fields, item.params)]
-        if not seen_app and not learnt_app:
+        tagged_app = {
+            action: [n.fields for n in notes if op.applicable(n.fields, item.params)]
+            for action, notes in tagged_notes.items()
+        }
+        if not seen_app and not learnt_app and not any(tagged_app.values()):
             continue
-        entries.extend(op.collect(client, seen_app, learnt_app))
-    return entries
+        u, f = op.collect(client, seen_app, learnt_app, tagged_app)
+        unforced.extend(u)
+        forced.extend(f)
+    return unforced, forced
