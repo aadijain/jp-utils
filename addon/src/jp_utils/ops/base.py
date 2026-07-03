@@ -1,7 +1,7 @@
 """Operations framework: plan backend-computed field updates for notes.
 
 An *operation* reads one or more INPUT alias values from a note and writes a
-single OUTPUT alias value, computed by the backend (e.g. furigana, definition,
+single OUTPUT alias value, computed by the backend (e.g. furigana, word-meaning,
 frequency). A *pipeline* is an ordered list of operations bound to a
 ``(deck, note type)``: :func:`resolve_pipeline_steps` turns a pipeline's stored
 steps into runnable :class:`ConfiguredOp`s, and :func:`plan_operations` batches
@@ -149,7 +149,7 @@ class Operation(ABC):
     """Base contract for a pipeline step: a keyed unit that may read input aliases.
 
     Subclassed three ways: :class:`FieldOperation` (computes and writes one output
-    field, e.g. furigana/definition/frequency), :class:`SortOperation` (reorders a
+    field, e.g. furigana/word-meaning/frequency), :class:`SortOperation` (reorders a
     deck's new cards by a per-note key, writes no field), and
     :class:`MediaOperation` (fetches a media file, attaches it to the collection,
     and writes a ``[sound:...]``/``<img>`` reference into one output field). The

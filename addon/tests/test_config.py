@@ -27,7 +27,7 @@ _NOTE_TYPES = {"Lapis": {"word": "Expression", "word-reading": "Reading"}}
 def test_defaults_seed_lapis_but_no_pipelines() -> None:
     cfg = AddonConfig()
     assert cfg.server_url == "http://localhost:9618"
-    assert cfg.note_types["Lapis"]["definition"] == "MainDefinition"
+    assert cfg.note_types["Lapis"]["word-meaning"] == "MainDefinition"
     assert cfg.pipelines == []  # pipelines are not seeded
 
 
@@ -55,7 +55,7 @@ def test_from_dict_flattens_legacy_input_output_maps() -> None:
             "note_types": {
                 "Lapis": {
                     "inputs": {"word": "Expression", "frequency": "FreqSort"},
-                    "outputs": {"frequency": "FreqSort", "definition": "MainDefinition"},
+                    "outputs": {"frequency": "FreqSort", "word-meaning": "MainDefinition"},
                 }
             }
         }
@@ -63,7 +63,7 @@ def test_from_dict_flattens_legacy_input_output_maps() -> None:
     assert cfg.note_types["Lapis"] == {
         "word": "Expression",
         "frequency": "FreqSort",
-        "definition": "MainDefinition",
+        "word-meaning": "MainDefinition",
     }
 
 

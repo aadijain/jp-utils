@@ -1,7 +1,7 @@
 """Word-definition operation: word + reading -> formatted dictionary senses.
 
 Reads the ``word`` and ``word-reading`` input aliases and writes a Jitendex
-definition into the ``definition`` output alias, via ``POST /v1/text/meaning``.
+definition into the ``word-meaning`` output alias, via ``POST /v1/text/meaning``.
 The backend returns per-sense structure (each sense = its synonymous glosses, a
 part-of-speech list, and example sentences); this op renders that into one of two
 HTML layouts chosen via ``params``. A word with no entry is left unchanged.
@@ -29,7 +29,7 @@ both light and dark. The whole output is wrapped in a ``jpu-definition`` div as 
 optional theming hook. See the note-type field reference for the
 Yomitan glossary export this draws inspiration from.
 
-The op key is ``word-definition``; its output alias stays ``definition`` (->
+The op key is ``word-definition``; its output alias is ``word-meaning`` (->
 Lapis ``MainDefinition``).
 """
 
@@ -193,7 +193,7 @@ class WordDefinitionOperation(FieldOperation):
     key = "word-definition"
     label = "Fetch definition"
     input_aliases = ("word", "word-reading")
-    output_alias = "definition"
+    output_alias = "word-meaning"
     params_spec = (
         ONLY_IF_EMPTY,
         ParamSpec(

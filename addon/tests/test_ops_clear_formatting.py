@@ -57,10 +57,10 @@ def test_plan_operations_idempotent_when_already_clean():
 
 def test_target_param_strips_a_different_alias_in_place():
     op = ClearFormattingOperation()
-    # The target defaults to `sentence`; point it at `definition` instead.
-    assert op.io_spec({"target": "definition"}).outputs == ("definition",)
-    notes = [NoteFields(note_id=1, fields={"sentence": "<b>keep</b>", "definition": "<i>x</i>"})]
-    plans = plan_operations(None, [ConfiguredOp(op, {"target": "definition"})], notes)
+    # The target defaults to `sentence`; point it at `word-meaning` instead.
+    assert op.io_spec({"target": "word-meaning"}).outputs == ("word-meaning",)
+    notes = [NoteFields(note_id=1, fields={"sentence": "<b>keep</b>", "word-meaning": "<i>x</i>"})]
+    plans = plan_operations(None, [ConfiguredOp(op, {"target": "word-meaning"})], notes)
     [update] = plans[0].updates
-    assert update.alias == "definition"  # the chosen field is cleaned, in place
+    assert update.alias == "word-meaning"  # the chosen field is cleaned, in place
     assert update.value == "x"

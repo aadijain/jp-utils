@@ -7,7 +7,7 @@ _MAPPING = {
     "word": "Expression",
     "sentence": "Sentence",
     "word-reading": "ExpressionReading",
-    "definition": "mainDefinition",
+    "word-meaning": "mainDefinition",
 }
 
 
@@ -19,7 +19,7 @@ def test_to_note_fields_maps_aliases() -> None:
         "word": "猫",
         "sentence": "猫だ",
         "word-reading": "ねこ",
-        "definition": "",  # mapped field missing from the note -> ""
+        "word-meaning": "",  # mapped field missing from the note -> ""
     }
 
 
@@ -29,7 +29,7 @@ def test_apply_plan_writes_mapped_outputs_only() -> None:
         note_id=7,
         updates=[
             FieldUpdate("word-reading", "ねこ"),
-            FieldUpdate("definition", "cat"),
+            FieldUpdate("word-meaning", "cat"),
             FieldUpdate("frequency", "1247"),  # not in this mapping -> skipped
         ],
     )
