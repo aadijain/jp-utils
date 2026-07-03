@@ -18,7 +18,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 ## Concepts
 
-**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `definition`, `frequency`, `word-audio`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
+**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `word-meaning`, `sentence-meaning`, `frequency`, `word-audio`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
 
 **Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
 
@@ -32,7 +32,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `word-furigana` | Add word furigana | `word` | `word-furigana` |
 | `sentence-furigana` | Add sentence furigana | `sentence` | `sentence-furigana` (HTML-aware) |
 | `highlight` | Highlight word in sentence | `word`, `sentence` | `sentence` (wraps the word in `<b>` in place; inflection-aware, preserves furigana) |
-| `word-definition` | Fetch definition | `word` | `definition` (sense-aware; format/POS/examples/readings toggles) |
+| `word-definition` | Fetch definition | `word` | `word-meaning` (sense-aware; format/POS/examples/readings toggles) |
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
@@ -66,7 +66,7 @@ The operations compose into a single-user study loop:
 2. `nplus1-sequence` + `int-sort` auto-order the new cards so each introduces as few new words as possible.
 3. `sentence-furigana` (and friends) auto-enrich the mined cards.
 4. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
-5. The word enrichment ops (reading, definition, frequency, audio) enrich each new vocab card.
+5. The word enrichment ops (reading, meaning, frequency, audio) enrich each new vocab card.
 6. `int-sort` orders the Word deck ascending by frequency rank.
 7. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`. Tagging a card `jp::learnt`, `jp::ignored`, or `jp::blacklisted` forces that status regardless of the card's state.
 
