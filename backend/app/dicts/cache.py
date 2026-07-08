@@ -22,13 +22,14 @@ from app.dicts.parsers import (
     parse_jitendex,
     parse_jmdict_furigana,
     parse_jpdb_freq,
+    parse_pitch,
 )
 from app.dicts.paths import DictKind, default_cache_path, resolve_dict_path
 from app.text.convert import kata_to_hira
 
 logger = logging.getLogger("jp_utils.backend")
 
-SCHEMA_VERSION = 3  # v3: per-sense structure; examples carry furigana+keyword segments
+SCHEMA_VERSION = 4  # v4: add the pitches table (downstep positions per term+reading)
 
 _SCHEMA = """
 CREATE TABLE meanings (
@@ -50,6 +51,11 @@ CREATE TABLE furigana (
     reading  TEXT NOT NULL,
     segments TEXT NOT NULL
 );
+CREATE TABLE pitches (
+    term     TEXT NOT NULL,
+    reading  TEXT NOT NULL,
+    position INTEGER NOT NULL
+);
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -59,10 +65,11 @@ CREATE TABLE meta (
 _INDEXES = """
 CREATE INDEX idx_meanings_lemma ON meanings(lemma);
 CREATE INDEX idx_furigana_key ON furigana(text, reading);
+CREATE INDEX idx_pitches_key ON pitches(term, reading);
 """
 
 # Logical table names exposed in status / readiness checks.
-DICT_TABLES = ("meanings", "frequencies", "furigana")
+DICT_TABLES = ("meanings", "frequencies", "furigana", "pitches")
 
 
 @dataclass
@@ -113,6 +120,11 @@ def _insert_furigana(conn: sqlite3.Connection, path: Path) -> int:
     return _executemany(conn, "INSERT INTO furigana VALUES (?, ?, ?)", rows)
 
 
+def _insert_pitches(conn: sqlite3.Connection, path: Path) -> int:
+    rows = ((r.term, r.reading, r.position) for r in parse_pitch(path))
+    return _executemany(conn, "INSERT INTO pitches VALUES (?, ?, ?)", rows)
+
+
 def _executemany(conn: sqlite3.Connection, sql: str, rows: Iterable[tuple]) -> int:
     cur = conn.executemany(sql, rows)
     return cur.rowcount if cur.rowcount != -1 else 0
@@ -122,6 +134,7 @@ _BUILDERS = {
     DictKind.JITENDEX: ("meanings", _insert_meanings),
     DictKind.JPDB_FREQ: ("frequencies", _insert_frequencies),
     DictKind.JMDICT_FURIGANA: ("furigana", _insert_furigana),
+    DictKind.PITCH: ("pitches", _insert_pitches),
 }
 
 
@@ -301,6 +314,27 @@ class DictCache:
             .fetchone()
         )
         return json.loads(row["segments"]) if row else None
+
+    def lookup_pitch(self, term: str, reading: str | None = None) -> list[int]:
+        """Downstep positions for a term (0 = heiban), ascending and de-duplicated.
+
+        With a reading, return that reading's accents (homographs differ); readings
+        are compared in hiragana space. Without a reading, return the union across
+        all the term's readings. Empty when no pitch data exists.
+        """
+        conn = self._conn()
+        if reading:
+            cur = conn.execute(
+                "SELECT DISTINCT position FROM pitches WHERE term = ? AND reading = ? "
+                "ORDER BY position",
+                (term, kata_to_hira(reading)),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT DISTINCT position FROM pitches WHERE term = ? ORDER BY position",
+                (term,),
+            )
+        return [row["position"] for row in cur.fetchall()]
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)
