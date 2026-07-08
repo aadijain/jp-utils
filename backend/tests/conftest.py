@@ -139,6 +139,16 @@ _JPDB_ROWS = [
     ["みず", "freq", {"value": 1500, "displayValue": "1500㋕"}],  # kana form
 ]
 
+_PITCH_ROWS = [
+    # 水/みず: single heiban accent; reading given in katakana to exercise kata->hira.
+    ["水", "pitch", {"reading": "ミズ", "pitches": [{"position": 0}]}],
+    # 人 is a homograph: ひと carries two accepted accents, にん a different one.
+    ["人", "pitch", {"reading": "ひと", "pitches": [{"position": 0}, {"position": 2}]}],
+    ["人", "pitch", {"reading": "にん", "pitches": [{"position": 1}]}],
+    # A non-pitch meta row in the same bank must be ignored.
+    ["水", "freq", {"value": 500}],
+]
+
 _FURIGANA_ROWS = [
     {
         "text": "食べる",
@@ -172,9 +182,13 @@ def synthetic_dicts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     body = "﻿" + json.dumps(_FURIGANA_ROWS)  # leading BOM, like the real file
     _write_zip(furigana, "JmdictFurigana.json", body.encode("utf-8"))
 
+    pitch = tmp_path / "kanjium-pitch-accents.zip"
+    _write_zip(pitch, "term_meta_bank_1.json", json.dumps(_PITCH_ROWS).encode("utf-8"))
+
     monkeypatch.setenv("JITENDEX_PATH", str(jitendex))
     monkeypatch.setenv("JPDB_FREQ_PATH", str(jpdb))
     monkeypatch.setenv("JMDICT_FURIGANA_PATH", str(furigana))
+    monkeypatch.setenv("KANJIUM_PITCH_PATH", str(pitch))
     return tmp_path
 
 

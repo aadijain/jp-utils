@@ -39,5 +39,10 @@ def test_health_ok_with_built_cache(built_cache: Path, monkeypatch: pytest.Monke
     assert body["status"] == "ok"
     assert body["cache_built"] is True
     assert body["tokenizer_ready"] is True
-    assert {d["name"] for d in body["dicts"]} == {"meanings", "frequencies", "furigana"}
+    assert {d["name"] for d in body["dicts"]} == {
+        "meanings",
+        "frequencies",
+        "furigana",
+        "pitches",
+    }
     assert all(d["loaded"] for d in body["dicts"])
