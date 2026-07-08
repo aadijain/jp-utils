@@ -181,6 +181,32 @@ class FrequencyResponse:
 
 
 @dataclass
+class PitchQuery:
+    term: str  # word form to look up pitch for (surface or dictionary form)
+    reading: str | None = None  # disambiguates homographs (hira/kata accepted)
+
+
+@dataclass
+class PitchResult:
+    term: str
+    reading: str | None
+    # downstep positions (0 = heiban), one per accepted accent; empty if unknown
+    positions: list[int] = field(default_factory=list)
+    # heiban/atamadaka/nakadaka/odaka per position, aligned with `positions`
+    categories: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PitchRequest:
+    queries: list[PitchQuery]  # batch-first
+
+
+@dataclass
+class PitchResponse:
+    results: list[PitchResult] = field(default_factory=list)  # aligned with request.queries
+
+
+@dataclass
 class AudioQuery:
     term: str  # the word to look up audio for
     reading: str | None = None  # optional reading to disambiguate homographs
