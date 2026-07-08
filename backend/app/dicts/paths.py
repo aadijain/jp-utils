@@ -24,6 +24,7 @@ class DictKind(StrEnum):
     JITENDEX = "jitendex"
     JPDB_FREQ = "jpdb_freq"
     JMDICT_FURIGANA = "jmdict_furigana"
+    PITCH = "pitch"
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ DICT_SPECS: dict[DictKind, DictSpec] = {
     DictKind.JMDICT_FURIGANA: DictSpec(
         DictKind.JMDICT_FURIGANA, "JMDICT_FURIGANA_PATH", "jmdict-furigana.json.zip"
     ),
+    DictKind.PITCH: DictSpec(DictKind.PITCH, "KANJIUM_PITCH_PATH", "kanjium-pitch-accents.zip"),
 }
 
 DICT_FILENAMES: dict[DictKind, str] = {k: s.filename for k, s in DICT_SPECS.items()}

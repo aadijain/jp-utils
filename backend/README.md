@@ -60,6 +60,7 @@ export JP_UTILS_API_TOKEN=your-secret-token      # required for /v1 routes
 uv run python ../scripts/fetch_jitendex.py
 uv run python ../scripts/fetch_freq_dict.py
 uv run python ../scripts/fetch_jmdict_furigana.py
+uv run python ../scripts/fetch_pitch_dict.py
 uv run python -m app.dicts                       # parse the dicts into a SQLite cache
 
 uv run uvicorn app.main:app --reload --port 9618  # start the dev server
@@ -80,6 +81,7 @@ Open <http://127.0.0.1:9618/docs> for the API explorer, or <http://127.0.0.1:961
 | `uv run python ../scripts/fetch_jitendex.py [--force]` | Download the Jitendex dictionary |
 | `uv run python ../scripts/fetch_freq_dict.py [--force]` | Download the JPDB frequency list |
 | `uv run python ../scripts/fetch_jmdict_furigana.py [--force]` | Download JmdictFurigana |
+| `uv run python ../scripts/fetch_pitch_dict.py [--force]` | Download the Kanjium pitch accents |
 
 ## Dictionary setup
 
