@@ -6,6 +6,7 @@ from app.dicts.parsers import (
     parse_jitendex,
     parse_jmdict_furigana,
     parse_jpdb_freq,
+    parse_pitch,
 )
 from app.dicts.paths import (
     DictKind,
@@ -100,6 +101,18 @@ def test_parse_furigana_keeps_full_segmentation(synthetic_dicts: Path) -> None:
     assert rows["食べる"].segments == [{"ruby": "食", "rt": "た"}, {"ruby": "べる", "rt": ""}]
 
 
+def test_parse_pitch_yields_one_row_per_position(synthetic_dicts: Path) -> None:
+    rows = list(parse_pitch(synthetic_dicts / "kanjium-pitch-accents.zip"))
+    # katakana readings normalized to hiragana; the non-pitch freq row is skipped;
+    # a word with two accents yields two rows.
+    assert {(r.term, r.reading, r.position) for r in rows} == {
+        ("水", "みず", 0),
+        ("人", "ひと", 0),
+        ("人", "ひと", 2),
+        ("人", "にん", 1),
+    }
+
+
 # ── Cache build + lookups ────────────────────────────────────────────────────
 
 
@@ -110,6 +123,7 @@ def test_build_cache_reports_entries(built_cache: Path) -> None:
     assert status["meanings"].entries == 3  # 食べる, 水, 人/ひと (low-score readings dropped)
     assert status["frequencies"].entries == 3  # (水,みず), (水,すい), (みず,みず)
     assert status["furigana"].entries == 3
+    assert status["pitches"].entries == 4  # (水,みず,0), (人,ひと,0), (人,ひと,2), (人,にん,1)
     assert all(s.loaded for s in status.values())
 
 
@@ -154,6 +168,21 @@ def test_lookup_furigana(built_cache: Path) -> None:
     assert cache is not None
     assert cache.lookup_furigana("水", "みず") == [{"ruby": "水", "rt": "みず"}]
     assert cache.lookup_furigana("水", "wrong") is None
+
+
+def test_lookup_pitch(built_cache: Path) -> None:
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    # Single accent; katakana reading is normalized to hiragana before matching.
+    assert cache.lookup_pitch("水", "みず") == [0]
+    assert cache.lookup_pitch("水", "ミズ") == [0]
+    # A reading with two accepted accents -> both, ascending.
+    assert cache.lookup_pitch("人", "ひと") == [0, 2]
+    # No reading -> union across the term's readings (ひと 0,2 + にん 1).
+    assert cache.lookup_pitch("人") == [0, 1, 2]
+    # Unknown term or wrong reading -> empty.
+    assert cache.lookup_pitch("存在しない") == []
+    assert cache.lookup_pitch("水", "ちがう") == []
 
 
 def test_open_returns_none_when_cache_missing(tmp_path: Path) -> None:

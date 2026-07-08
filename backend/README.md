@@ -85,13 +85,14 @@ Open <http://127.0.0.1:9618/docs> for the API explorer, or <http://127.0.0.1:961
 
 ## Dictionary setup
 
-The backend reads three [Yomitan](https://yomitan.wiki)-format dictionaries and parses them once into a read-only SQLite cache (`python -m app.dicts`):
+The backend reads four [Yomitan](https://yomitan.wiki)-format dictionaries and parses them once into a read-only SQLite cache (`python -m app.dicts`):
 
 | Dictionary | Provides | Fetch with |
 |---|---|---|
 | [Jitendex](https://jitendex.org) | meanings | `scripts/fetch_jitendex.py` |
 | [JPDB frequency list](https://github.com/MarvNC/jpdb-freq-list) | word frequency | `scripts/fetch_freq_dict.py` |
 | [JmdictFurigana](https://github.com/Doublevil/JmdictFurigana) | furigana segmentation | `scripts/fetch_jmdict_furigana.py` |
+| [Kanjium pitch accents](https://github.com/toasted-nutbread/yomichan-pitch-accent-dictionary) | pitch accent | `scripts/fetch_pitch_dict.py` |
 
 Each dictionary is located in this order:
 

@@ -59,6 +59,12 @@ class FuriganaRow(NamedTuple):
     segments: list[dict[str, str]]  # [{"ruby": ..., "rt": ...}], rt="" for kana chunks
 
 
+class PitchRow(NamedTuple):
+    term: str
+    reading: str  # hiragana
+    position: int  # downstep (mora after which pitch drops; 0 = heiban / no drop)
+
+
 # ── jitendex (meanings) ──────────────────────────────────────────────────────
 
 
@@ -425,6 +431,38 @@ def parse_jpdb_freq(zip_path: Path) -> Iterator[FreqRow]:
                     rank=rank,
                     is_kana_form=is_kana,
                 )
+
+
+# ── Pitch accent (Kanjium) ───────────────────────────────────────────────────
+
+
+def parse_pitch(zip_path: Path) -> Iterator[PitchRow]:
+    """Yield one PitchRow per (term, reading, downstep position).
+
+    A Yomitan pitch dict shares the term-meta shape with JPDB frequency, keyed
+    `kind == "pitch"`. Row layout: [term, "pitch", {reading, pitches: [{position,
+    ...}]}]. A word can carry several accepted accents (multiple `pitches`), each
+    yielded as its own row. Readings are normalized to hiragana so lookups compare
+    in one space (matching the frequency table).
+    """
+    with zipfile.ZipFile(zip_path) as zf:
+        banks = sorted(n for n in zf.namelist() if _TERM_META_BANK_RE.search(n))
+        if not banks:
+            raise ValueError("pitch zip has no term_meta_bank_*.json files")
+        for bank in banks:
+            for row in json.loads(zf.read(bank)):
+                term, kind, data = row[0], row[1], row[2]
+                if kind != "pitch" or not term or not isinstance(data, dict):
+                    continue
+                reading = data.get("reading")
+                pitches = data.get("pitches")
+                if not isinstance(reading, str) or not isinstance(pitches, list):
+                    continue
+                hira = kata_to_hira(reading)
+                for pitch in pitches:
+                    position = pitch.get("position") if isinstance(pitch, dict) else None
+                    if isinstance(position, int):
+                        yield PitchRow(term=term, reading=hira, position=position)
 
 
 # ── JmdictFurigana ───────────────────────────────────────────────────────────
