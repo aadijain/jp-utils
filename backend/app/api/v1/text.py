@@ -25,6 +25,7 @@ from app.text.furigana import annotate
 from app.text.locate import locate
 from app.text.meaning import lookup_meaning
 from app.text.normalize import normalize
+from app.text.pitch import lookup_pitch
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
 from app.text.words import content_words_with_readings
@@ -46,6 +47,8 @@ from shared.text import (
     MeaningResponse,
     NormalizeRequest,
     NormalizeResponse,
+    PitchRequest,
+    PitchResponse,
     SpacingRequest,
     SpacingResponse,
     TokenizedText,
@@ -114,6 +117,15 @@ def frequency(
 ) -> FrequencyResponse:
     """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
     return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
+
+
+@router.post("/pitch")
+def pitch(
+    req: PitchRequest,
+    cache: DictCache = Depends(require_dict_cache),
+) -> PitchResponse:
+    """Look up pitch-accent positions + categories for a batch. Aligned with `req.queries`."""
+    return PitchResponse(results=[lookup_pitch(cache, q) for q in req.queries])
 
 
 @router.post("/content-words")

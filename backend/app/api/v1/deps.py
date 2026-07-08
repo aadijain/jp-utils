@@ -29,7 +29,7 @@ def get_dict_cache(request: Request) -> DictCache | None:
 
 
 def require_dict_cache(request: Request) -> DictCache:
-    """For endpoints that can't work without the dict cache (meaning, frequency)."""
+    """For endpoints that can't work without the dict cache (meaning, frequency, pitch)."""
     cache = getattr(request.app.state, "dict_cache", None)
     if cache is None:
         raise APIError(503, "dictionary_unavailable", "Dictionary cache is not built")

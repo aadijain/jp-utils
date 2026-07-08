@@ -20,6 +20,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /convert` | hiragana/katakana, romaji, and full-width/half-width conversion |
 | `POST /meaning` | Dictionary definitions, per-sense (Jitendex); optional reading filter |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
+| `POST /pitch` | Pitch-accent downstep positions + categories (heiban/atamadaka/nakadaka/odaka) per word (Kanjium) |
 | `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key) |
 | `POST /content-words` | The vocabulary words of a sentence (content-word filtered, each with its in-context reading) - used to generate vocab cards |
 | `POST /locate` | Find a word in a sentence by its dictionary form (inflection-aware), returning the sentence split into segments with the match flagged - used to highlight the mined word |
