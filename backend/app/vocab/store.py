@@ -207,6 +207,14 @@ class VocabStore:
             ]
         return FilterByStatusResponse(matched=matched)
 
+    def current_words(self) -> list[tuple[str, str, WordStatus]]:
+        """Every recorded (lemma, reading, status) at its latest event (present set)."""
+        return [
+            (r["lemma"], r["reading"], _status_of(r["action"]))
+            for r in self._read(_CURRENT_SQL)
+            if r["action"] in _PRESENT
+        ]
+
     def status(self) -> VocabStatus:
         events = self._read("SELECT COUNT(*) AS c FROM events")[0]["c"]
         version = self._read("SELECT COALESCE(MAX(id), 0) AS v FROM events")[0]["v"]
