@@ -2,7 +2,8 @@
 
 Tokenizes a sentence and keeps only the *content words* - the ones that count as
 vocabulary for n+1 scoring. Particles, auxiliaries,
-punctuation, proper nouns and numerals are dropped. Each surviving morpheme is
+punctuation, proper nouns, numerals and purely-katakana words (loanwords/names)
+are dropped. Each surviving morpheme is
 reduced to its dictionary-form lemma; matching against the learnt set is
 **lemma-only** (the stored reading is dict-preferred while the tokenizer emits
 Sudachi readings, so reading is not a safe key yet).
@@ -32,6 +33,25 @@ KEEP_TOP = {"名詞", "動詞", "形容詞", "形状詞", "副詞", "代名詞"}
 # Noun subtypes dropped even though the top-level is 名詞: proper nouns + numerals.
 DROP_NOUN_SUB = {"固有名詞", "数詞"}
 
+# "Purely katakana" = full-width katakana letters (U+30A1–U+30FA) plus the prolonged
+# sound mark ー and the middle dot ・, and nothing else. Such words (loanwords /
+# names) are dropped from the content-word set alongside proper nouns and numerals,
+# so they never become vocab cards nor count toward n+1. At least one real kana is
+# required, so a bare "ー"/"・" is not treated as a katakana word.
+_KATAKANA_LETTERS = range(0x30A1, 0x30FB)  # ァ..ヺ
+_KATAKANA_EXTRA = frozenset("ー・")  # U+30FC prolonged mark, U+30FB middle dot
+
+
+def is_pure_katakana(text: str) -> bool:
+    """True when `text` is katakana only (letters + ー/・) with at least one kana."""
+    has_letter = False
+    for ch in text:
+        if ord(ch) in _KATAKANA_LETTERS:
+            has_letter = True
+        elif ch not in _KATAKANA_EXTRA:
+            return False
+    return has_letter
+
 
 def is_content(token: Token) -> bool:
     """True when the morpheme is a content word that counts toward n+1."""
@@ -40,6 +60,8 @@ def is_content(token: Token) -> bool:
         return False
     if pos[0] == "名詞" and len(pos) > 1 and pos[1] in DROP_NOUN_SUB:
         return False
+    if is_pure_katakana(token.dictionary_form or token.surface):
+        return False  # katakana loanwords/names are not vocab targets
     return True
 
 

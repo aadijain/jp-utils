@@ -5,7 +5,12 @@ import pytest
 
 from app.cache import TokenizationCache, sentence_hash
 from app.text.tokenizer import Tokenizer
-from app.text.words import content_words, content_words_with_readings, is_content
+from app.text.words import (
+    content_words,
+    content_words_with_readings,
+    is_content,
+    is_pure_katakana,
+)
 
 
 def _tok(tokenizer: Tokenizer, text: str):
@@ -36,6 +41,26 @@ def test_drops_proper_nouns_and_numerals(tokenizer: Tokenizer) -> None:
     # 固有名詞 (names) + 数詞 (numerals) are excluded even though top-level is 名詞.
     assert is_content(_tok(tokenizer, "田中")) is False
     assert is_content(_tok(tokenizer, "三")) is False
+
+
+def test_is_pure_katakana() -> None:
+    assert is_pure_katakana("コーヒー")  # letters + ー
+    assert is_pure_katakana("ジャン・ポール")  # letters + ・
+    assert is_pure_katakana("ア")
+    assert not is_pure_katakana("")
+    assert not is_pure_katakana("ー")  # no real kana
+    assert not is_pure_katakana("・")
+    assert not is_pure_katakana("食べる")  # kanji + hiragana
+    assert not is_pure_katakana("みず")  # hiragana
+    assert not is_pure_katakana("コーヒーA")  # trailing non-katakana
+
+
+def test_drops_purely_katakana_loanwords(tokenizer: Tokenizer) -> None:
+    # A katakana loanword is a common 名詞 but is filtered like a proper noun; the
+    # kanji noun in the same sentence survives.
+    assert is_content(_tok(tokenizer, "コーヒー")) is False
+    assert "コーヒー" not in content_words(tokenizer, "コーヒーを飲む")
+    assert "飲む" in content_words(tokenizer, "コーヒーを飲む")
 
 
 def test_empty_text(tokenizer: Tokenizer) -> None:

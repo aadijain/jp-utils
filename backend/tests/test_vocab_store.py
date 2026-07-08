@@ -193,6 +193,18 @@ def test_status_counts(vocab_store: VocabStore) -> None:
     assert status.version == 2
 
 
+def test_current_words_reports_status(vocab_store: VocabStore) -> None:
+    # current_words backs the one-shot katakana backfill script: latest status per key.
+    vocab_store.record(
+        [RecordEntry(lemma="水", reading="みず", action=VocabAction.SEEN, source=VocabSource.ANKI)]
+    )
+    vocab_store.record([RecordEntry(lemma="火", reading="ひ", action=VocabAction.LEARNT)])
+    assert set(vocab_store.current_words()) == {
+        ("水", "みず", WordStatus.SEEN),
+        ("火", "ひ", WordStatus.LEARNT),
+    }
+
+
 def test_export_json_and_csv(vocab_store: VocabStore) -> None:
     vocab_store.record(
         [
