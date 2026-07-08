@@ -34,6 +34,17 @@ def test_download_target_uses_shared_dir_without_env(monkeypatch) -> None:
     assert download_target(DictKind.JPDB_FREQ) == shared_dict_dir() / "jpdb-freq-list.zip"
 
 
+def test_pitch_download_target_uses_env_var(monkeypatch, tmp_path: Path) -> None:
+    dest = tmp_path / "pitch.zip"
+    monkeypatch.setenv("KANJIUM_PITCH_PATH", str(dest))
+    assert download_target(DictKind.PITCH) == dest
+
+
+def test_pitch_download_target_uses_shared_dir_without_env(monkeypatch) -> None:
+    monkeypatch.delenv("KANJIUM_PITCH_PATH", raising=False)
+    assert download_target(DictKind.PITCH) == shared_dict_dir() / "kanjium-pitch-accents.zip"
+
+
 # ── Parsers ──────────────────────────────────────────────────────────────────
 
 

@@ -25,6 +25,10 @@ URLS: dict[DictKind, str] = {
         "https://github.com/Doublevil/JmdictFurigana/releases/latest/download/"
         "JmdictFurigana.json.zip"
     ),
+    DictKind.PITCH: (
+        "https://github.com/toasted-nutbread/yomichan-pitch-accent-dictionary/releases/"
+        "download/1.0.0/kanjium_pitch_accents.zip"
+    ),
 }
 
 
