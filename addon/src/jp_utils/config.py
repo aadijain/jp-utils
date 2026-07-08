@@ -43,6 +43,7 @@ ALIASES: tuple[str, ...] = (
     "word-meaning",
     "frequency",
     "word-audio",
+    "pitch",
     "rank",
     # Sentence-context fields copied from a mined sentence onto a generated vocab
     # card. Read from the source sentence note, written to the target word
@@ -68,6 +69,7 @@ DEFAULT_FIELDS: dict[str, str] = {
     "word-meaning": "MainDefinition",
     "frequency": "FreqSort",
     "word-audio": "ExpressionAudio",
+    "pitch": "PitchPosition",
     "rank": "FreqSort",
     # Copied-context targets on the generated Lapis word note. The sentence
     # note type is NOT seeded (user maps it by hand); only the Lapis side here.

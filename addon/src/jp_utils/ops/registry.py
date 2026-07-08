@@ -11,6 +11,7 @@ from .generate import GenerateVocabOperation
 from .highlight import HighlightOperation
 from .int_sort import IntSortOperation
 from .nplus1 import Nplus1SequenceOperation
+from .pitch import PitchOperation
 from .sentence_furigana import SentenceFuriganaOperation
 from .set_field import SetFieldOperation
 from .spacing import SpacingOperation
@@ -28,6 +29,7 @@ ALL_OPERATIONS: list[Operation] = [
     WordDefinitionOperation(),
     FrequencyOperation(),
     WordAudioOperation(),
+    PitchOperation(),
     Nplus1SequenceOperation(),
     IntSortOperation(),
     GenerateVocabOperation(),
