@@ -11,6 +11,7 @@
       "word-meaning": "MainDefinition",
       "frequency": "FreqSort",
       "word-audio": "ExpressionAudio",
+      "pitch": "PitchPosition",
       "rank": "FreqSort",
       "sentence-audio": "SentenceAudio",
       "sentence-image": "Picture",

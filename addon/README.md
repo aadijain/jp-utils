@@ -18,7 +18,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 ## Concepts
 
-**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `word-meaning`, `sentence-meaning`, `frequency`, `word-audio`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
+**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `word-meaning`, `sentence-meaning`, `frequency`, `word-audio`, `pitch`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
 
 **Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
 
@@ -35,6 +35,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `word-definition` | Fetch definition | `word` | `word-meaning` (sense-aware; format/POS/examples/readings toggles) |
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
+| `pitch` | Fetch pitch accent | `word`, `word-reading` | `pitch` (downstep position(s); Lapis renders + colors from it) |
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
