@@ -36,6 +36,7 @@ export JP_UTILS_API_TOKEN=your-secret-token      # required for /v1 routes
 uv run python ../scripts/fetch_jitendex.py
 uv run python ../scripts/fetch_freq_dict.py
 uv run python ../scripts/fetch_jmdict_furigana.py
+uv run python ../scripts/fetch_pitch_dict.py
 uv run python -m app.dicts                       # parse the dicts into the cache
 
 uv run uvicorn app.main:app --reload             # start the dev server
