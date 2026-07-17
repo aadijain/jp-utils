@@ -20,10 +20,16 @@ def test_health_is_public_and_degraded_without_cache(client: TestClient) -> None
     assert body["dicts"] == []
 
 
-def test_health_ok_with_built_cache(built_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_ok_with_built_cache(
+    built_cache: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The lifespan calls get_settings() directly, so drive it via env (not a
-    # dependency override) and reset the settings cache around the test.
+    # dependency override) and reset the settings cache around the test. Every
+    # stateful path is pointed at tmp so the run never touches real data files.
     monkeypatch.setenv("JP_UTILS_DICT_CACHE_PATH", str(built_cache))
+    monkeypatch.setenv("JP_UTILS_VOCAB_DB_PATH", str(tmp_path / "vocab.db"))
+    monkeypatch.setenv("JP_UTILS_TOKENIZATION_CACHE_PATH", str(tmp_path / "tok.db"))
+    monkeypatch.setenv("JP_UTILS_TRANSLATION_DB_PATH", str(tmp_path / "queue.db"))
     get_settings.cache_clear()
     app = create_app()
 
