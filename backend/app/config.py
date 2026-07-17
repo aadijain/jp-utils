@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Derived tokenization cache location. Empty -> cache.default_cache_path().
     tokenization_cache_path: str = ""
 
+    # Sentence-translation queue (translation-queue.db) location. Empty ->
+    # translations.default_db_path().
+    translation_db_path: str = ""
+
     # Base URL of the Yomitan local-audio-yomichan server (`../local-audio-yomichan`,
     # standalone WO_ANKI=1). The backend proxies it for word audio; the add-on never
     # calls it directly. Typically co-hosted with the backend, so localhost by default.

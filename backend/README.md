@@ -113,6 +113,7 @@ Settings come from `JP_UTILS_*` environment variables (or a `backend/.env` file)
 | `JP_UTILS_AUDIO_URL` | Base URL of the local-audio-yomichan server the audio proxy hits (default `http://127.0.0.1:5050`) |
 | `JP_UTILS_DICT_CACHE_PATH` | Override the dictionary cache location |
 | `JP_UTILS_VOCAB_DB_PATH` | Override the vocab store (`vocab.db`) location |
+| `JP_UTILS_TRANSLATION_DB_PATH` | Override the translation queue (`translation-queue.db`) location |
 | `JITENDEX_PATH` / `JPDB_FREQ_PATH` / `JMDICT_FURIGANA_PATH` | Override individual dictionary file locations |
 
 ## Layout
