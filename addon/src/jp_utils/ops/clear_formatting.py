@@ -57,6 +57,11 @@ def strip_formatting(text: str) -> str:
 class ClearFormattingOperation(FieldOperation):
     key = "clear-formatting"
     label = "Clear formatting"
+    description = (
+        "Strips HTML formatting from the sentence field in place, leaving plain "
+        "text. Purely local; useful for cleaning pasted or mined markup before "
+        "other ops run."
+    )
     # No static input/output aliases: the target is param-driven (see io_spec).
     # No only_if_empty either - stripping in place must see (and may rewrite) the value.
     params_spec = (

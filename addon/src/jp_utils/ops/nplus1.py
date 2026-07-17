@@ -44,6 +44,12 @@ def _parse_int(raw: str) -> int | None:
 class Nplus1SequenceOperation(FieldOperation):
     key = "nplus1-sequence"
     label = "Assign n+1 sequence"
+    description = (
+        "Computes an n+1 study order for the deck's sentences (each sentence "
+        "introduces about one unknown word) and writes each card's position to "
+        "the rank field. Uses the vocab store to know which words you already "
+        "know."
+    )
     input_aliases = ("sentence",)
     output_alias = "rank"
     params_spec = ()  # no only_if_empty: the order is global and must always recompute

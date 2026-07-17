@@ -32,6 +32,11 @@ def split_html(text: str) -> list[tuple[str, bool]]:
 class SentenceFuriganaOperation(FieldOperation):
     key = "sentence-furigana"
     label = "Add sentence furigana"
+    description = (
+        "Adds furigana ruby to the whole sentence and writes the result to the "
+        "sentence-furigana field. HTML-aware: existing markup in the sentence is "
+        "preserved."
+    )
     input_aliases = ("sentence",)
     output_alias = "sentence-furigana"
 
