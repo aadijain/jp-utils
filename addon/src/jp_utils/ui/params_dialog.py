@@ -24,7 +24,14 @@ from ..ops import ParamSpec
 
 
 class ParamEditorDialog(QDialog):
-    def __init__(self, parent, op_key: str, specs: tuple[ParamSpec, ...], values: dict) -> None:
+    def __init__(
+        self,
+        parent,
+        op_key: str,
+        specs: tuple[ParamSpec, ...],
+        values: dict,
+        description: str = "",
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{op_key} options")
         # QDialog windows get only a close button by default; allow maximizing.
@@ -33,6 +40,11 @@ class ParamEditorDialog(QDialog):
         self._widgets: dict = {}
 
         layout = QVBoxLayout(self)
+        if description:
+            header = QLabel(description)
+            header.setWordWrap(True)
+            header.setStyleSheet("color: gray;")  # same style as the per-param hints
+            layout.addWidget(header)
         if not specs:
             layout.addWidget(QLabel("This operation has no options."))
         else:

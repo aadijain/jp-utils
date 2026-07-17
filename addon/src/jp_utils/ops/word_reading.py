@@ -18,6 +18,11 @@ def to_reading(segments: list[dict]) -> str:
 class WordReadingOperation(FieldOperation):
     key = "word-reading"
     label = "Fetch word reading"
+    description = (
+        "Looks up the kana reading of the mined word via the backend dictionary "
+        "(e.g. 主役 -> しゅやく) and writes it to the reading field. Run it early: "
+        "later ops use the reading to disambiguate homographs."
+    )
     input_aliases = ("word",)
     output_alias = "word-reading"
 

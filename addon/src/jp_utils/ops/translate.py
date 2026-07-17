@@ -69,6 +69,12 @@ def append_raw(misc: str, replaced: str) -> str | None:
 class AiTranslateOperation(TranslateOperation):
     key = "ai-translate"
     label = "Translate sentence via AI queue"
+    description = (
+        "Applies AI translations to sentence notes tagged jp::translate. "
+        "Untranslated sentences are queued on the backend; once a translation is "
+        "ready it is written to the target field and the tag is removed. "
+        "Translation is asynchronous, so a sentence may only fill on a later run."
+    )
     # `sentence` -> the text to translate (REQUIRED). `sentence-meaning` is both
     # optional input (its pre-translation content is the translator's context)
     # and the output the finished translation overwrites.

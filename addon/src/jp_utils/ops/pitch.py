@@ -18,6 +18,11 @@ from .base import FieldOperation
 class PitchOperation(FieldOperation):
     key = "pitch"
     label = "Fetch pitch accent"
+    description = (
+        "Fetches the word's pitch-accent downstep position(s) and writes them to "
+        "the pitch field, in the format Lapis note types use to render pitch "
+        "coloring."
+    )
     input_aliases = ("word", "word-reading")
     output_alias = "pitch"
 

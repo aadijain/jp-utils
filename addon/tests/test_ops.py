@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 from jp_utils.ops import (
+    ALL_OPERATIONS,
     ConfiguredOp,
     FieldOperation,
     IOSpec,
@@ -144,3 +145,11 @@ def test_field_op_with_no_resolved_output_writes_nothing() -> None:
 
     plans = plan_operations(None, [ConfiguredOp(_Blank(), {})], [note])
     assert plans == []
+
+
+def test_every_registered_op_has_a_description() -> None:
+    """The pipeline editor surfaces `description` in tooltips and the params
+    dialog, so every registered op must ship one (keeps future ops honest)."""
+    for op in ALL_OPERATIONS:
+        assert isinstance(op.description, str), op.key
+        assert op.description.strip(), f"{op.key} has no description"

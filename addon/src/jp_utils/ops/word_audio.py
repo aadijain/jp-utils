@@ -20,6 +20,10 @@ from .base import MediaOperation, MediaResult
 class WordAudioOperation(MediaOperation):
     key = "word-audio"
     label = "Fetch word audio"
+    description = (
+        "Downloads a native pronunciation clip for the word, stores it in the "
+        "media collection, and writes a [sound:...] reference to the audio field."
+    )
     input_aliases = ("word", "word-reading")
     output_alias = "word-audio"
 

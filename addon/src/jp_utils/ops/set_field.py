@@ -23,6 +23,11 @@ from .base import ONLY_IF_EMPTY, FieldOperation, IOSpec, ParamSpec
 class SetFieldOperation(FieldOperation):
     key = "set-field"
     label = "Set field"
+    description = (
+        "Writes a fixed literal value into a chosen field. Purely local (no "
+        "backend call); useful for stamping a constant onto every note in the "
+        "deck."
+    )
     # No static input/output aliases: the target is param-driven (see io_spec), and
     # the op reads no field so it applies to every note.
     params_spec = (

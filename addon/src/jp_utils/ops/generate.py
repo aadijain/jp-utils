@@ -65,6 +65,11 @@ COPY_ALIASES = ParamSpec(
 class GenerateVocabOperation(GenerateOperation):
     key = "generate-vocab"
     label = "Generate vocab cards"
+    description = (
+        "Creates new vocab cards in a target deck from the content words of a "
+        "mined sentence, skipping words the vocab store already knows. Configure "
+        "the target deck and note type in the options."
+    )
     input_aliases = ("sentence",)  # the field tokenized for content words
     params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING, COPY_ALIASES)
 

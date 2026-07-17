@@ -17,6 +17,11 @@ from .base import FieldOperation
 class FrequencyOperation(FieldOperation):
     key = "frequency"
     label = "Fetch frequency rank"
+    description = (
+        "Fetches the word's JPDB frequency rank and writes it to the rank field. "
+        'Typically paired with "Sort by rank" to order new cards by how common '
+        "the word is."
+    )
     input_aliases = ("word", "word-reading")
     output_alias = "frequency"
 

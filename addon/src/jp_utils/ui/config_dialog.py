@@ -62,6 +62,15 @@ from .run import run_pipeline
 ALIAS_COLUMN_WIDTH = 220
 
 
+def _wrap_tooltip(text: str) -> str:
+    """Wrap tooltip text in ``<qt>`` so Qt renders it rich-text and word-wraps it.
+
+    Plain-text tooltips never wrap, so a 2-3 sentence op description would render
+    as one very long line.
+    """
+    return f"<qt>{text}</qt>"
+
+
 class _NoWheelComboBox(QComboBox):
     """A combo box that ignores mouse-wheel scrolls.
 
@@ -545,8 +554,13 @@ class ConfigDialog(QDialog):
             op_item = QTableWidgetItem(f"⚠ {label}" if unmapped else label)
             op_item.setData(Qt.ItemDataRole.UserRole, step.op)  # stored identity
             op_item.setData(Qt.ItemDataRole.UserRole + 1, dict(step.params))  # per-row params
+            tip_parts = []
             if unmapped:
-                op_item.setToolTip(f"Unmapped field(s) for this note type: {', '.join(unmapped)}")
+                tip_parts.append(f"Unmapped field(s) for this note type: {', '.join(unmapped)}")
+            if op and op.description:
+                tip_parts.append(op.description)
+            if tip_parts:
+                op_item.setToolTip(_wrap_tooltip("<br><br>".join(tip_parts)))
             self._set_readonly(op_item)
             table.setItem(r, 0, op_item)
 
@@ -675,13 +689,18 @@ class ConfigDialog(QDialog):
             return
         self._capture_steps()
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)  # show each op's description on hover
         # Every operation is always offered; an op may be added more than once
         # (each step keeps its own params), so there is no "already used" filter.
         if not ALL_OPERATIONS:
             menu.addAction("(no operations available)").setEnabled(False)
         else:
             for op in ALL_OPERATIONS:
-                menu.addAction(op.label, lambda checked=False, key=op.key: self._add_operation(key))
+                action = menu.addAction(
+                    op.label, lambda checked=False, key=op.key: self._add_operation(key)
+                )
+                if op.description:
+                    action.setToolTip(_wrap_tooltip(op.description))
         menu.exec(QCursor.pos())
 
     def _add_operation(self, op_key: str) -> None:
@@ -717,7 +736,9 @@ class ConfigDialog(QDialog):
         step = self._pipelines[idx].steps[row]
         op = self._op_by_key(step.op)
         specs = self._resolve_dynamic_specs(op.params_spec) if op else ()
-        dialog = ParamEditorDialog(self, step.op, specs, step.params)
+        dialog = ParamEditorDialog(
+            self, step.op, specs, step.params, description=op.description if op else ""
+        )
         if dialog.exec() and specs:  # don't wipe params of an unregistered op (no specs)
             step.params = dialog.values()
             self._render_steps_table(self._pipelines[idx])  # refresh row label + stored params

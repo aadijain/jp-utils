@@ -162,6 +162,7 @@ class Operation(ABC):
 
     key: str  # stable identifier (stored in a pipeline step)
     label: str  # human label (UI)
+    description: str = ""  # 2-3 sentence function + usage summary (UI help text)
     input_aliases: tuple[str, ...] = ()  # required inputs (static default contract)
     optional_input_aliases: tuple[str, ...] = ()  # read-if-present, never gating
     params_spec: tuple[ParamSpec, ...] = ()  # the options this operation accepts

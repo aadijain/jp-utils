@@ -31,6 +31,10 @@ _DEFAULT_SEPARATOR = " "
 class SpacingOperation(FieldOperation):
     key = "spacing"
     label = "Space words in sentence"
+    description = (
+        "Inserts spaces at word boundaries in a chosen plain-text field, in "
+        "place, using the backend tokenizer."
+    )
     # No static input/output aliases: the target is param-driven (see io_spec).
     # No only_if_empty either - spacing in place must see (and may rewrite) the value.
     params_spec = (

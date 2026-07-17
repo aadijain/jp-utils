@@ -192,6 +192,11 @@ def _format(result: dict, params: dict) -> str | None:
 class WordDefinitionOperation(FieldOperation):
     key = "word-definition"
     label = "Fetch definition"
+    description = (
+        "Fetches dictionary definitions for the word (using the reading to "
+        "disambiguate when present) and writes the formatted senses to the "
+        "definition field."
+    )
     input_aliases = ("word", "word-reading")
     output_alias = "word-meaning"
     params_spec = (

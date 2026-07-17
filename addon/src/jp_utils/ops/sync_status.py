@@ -54,6 +54,13 @@ TAG_ACTIONS = {
 class SyncWordStatusOperation(StatusOperation):
     key = "sync-word-status"
     label = "Sync word status to vocab store"
+    description = (
+        "Reports each word card's study state to the backend vocab store, which "
+        "sequencing and generation ops use to know which words you know. A new, "
+        "not-yet-studied card marks its word as seen; a reviewed or suspended "
+        "card marks it as learnt. Cards tagged jp::learnt, jp::ignored, or "
+        "jp::blacklisted force that status instead, overriding card state."
+    )
     # `word` -> the lemma (REQUIRED). `word-reading` -> the event reading, OPTIONAL:
     # read when present, else the deinflected reading is used (a card not yet enriched
     # with one). As an optional input it shows in the I/O signature but isn't
