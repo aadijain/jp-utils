@@ -49,6 +49,24 @@ The store is portable plain SQLite and is designed to be extractable into its ow
 
 The add-on uses this to order a mining deck's new-card queue. More mining endpoints can join this layer as the workflow grows.
 
+## Translation queue (`/v1/translations/*`)
+
+Async AI translation for mined sentences. Lookups are instant: a sentence with a finished translation gets it back, and one seen for the first time is queued as pending - no request ever waits on a translator. A separate batch translator (run on your own schedule, not part of this service) drains the queue over CSV. Rows are keyed by a hash of the normalized sentence, so a finished translation is cached forever and re-asking is free.
+
+| Endpoint | What it does |
+|---|---|
+| `POST /lookup` | For each sentence (with an optional context line), return its translation + notes when done; first-seen sentences are queued as pending |
+| `GET /export?status=pending` | The pending queue as a CSV with header `key,source,context`, ready to feed a batch translator |
+| `POST /results` | Accept the translator's output CSV (raw body; the exported columns plus `translation,notes`); translated rows are marked done, blank ones stay pending for the translator's own retry |
+
+A worker cycle is three commands:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$SERVER/v1/translations/export" > pending.csv
+# run your batch translator: pending.csv in, out.csv = same columns + translation,notes
+curl -X POST -H "Authorization: Bearer $TOKEN" --data-binary @out.csv "$SERVER/v1/translations/results"
+```
+
 ## Quick start
 
 From this directory:
@@ -126,10 +144,11 @@ app/
   errors.py        APIError + exception handlers (one error shape)
   api/
     health.py      public /health
-    v1/            text.py, vocab.py, mining.py routers (bearer-guarded)
+    v1/            text.py, vocab.py, mining.py, translations.py routers (bearer-guarded)
   text/            tokenizer, furigana, convert, meaning, frequency, normalize, words, audio, spacing
   vocab/           store.py (the event ledger)
   mining/          ordering.py (pure greedy n+1) + sort.py (text + vocab composition)
+  translations/    queue.py (the async sentence-translation queue)
   dicts/           parsers + read-only SQLite cache over the three dictionaries
   cache/           tokenization cache (derived, disposable)
 tests/             pytest suite (FastAPI TestClient)

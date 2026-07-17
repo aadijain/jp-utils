@@ -264,3 +264,22 @@ def text_client_with_dicts(settings: Settings, tokenizer, built_cache) -> TestCl
     app.state.tokenizer = tokenizer
     app.state.dict_cache = DictCache.open(built_cache)
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def translation_queue(tmp_path: Path):
+    """A fresh translation queue backed by a temp db."""
+    from app.translations import TranslationQueue
+
+    queue = TranslationQueue.open(tmp_path / "translation-queue.db")
+    yield queue
+    queue.close()
+
+
+@pytest.fixture
+def translation_client(settings: Settings, translation_queue) -> TestClient:
+    """Client with the translation queue injected on app.state (no lifespan needed)."""
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.state.translation_queue = translation_queue
+    return TestClient(app, raise_server_exceptions=False)
