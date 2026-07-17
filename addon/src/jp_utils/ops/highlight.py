@@ -143,6 +143,11 @@ def highlight(text: str, segments: list[dict]) -> str | None:
 class HighlightOperation(FieldOperation):
     key = "highlight"
     label = "Highlight word in sentence"
+    description = (
+        "Wraps the mined word in bold tags inside the sentence field, in place. "
+        "Finds the word even when inflected in the sentence, and preserves "
+        "existing furigana."
+    )
     # No static input/output aliases: both the word to find and the sentence it is
     # highlighted in (in place) are param-driven (see io_spec). No only_if_empty
     # either - highlighting in place must see (and may rewrite) the value.

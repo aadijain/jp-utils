@@ -37,6 +37,11 @@ def to_anki_ruby(segments: list[dict]) -> str:
 class WordFuriganaOperation(FieldOperation):
     key = "word-furigana"
     label = "Add word furigana"
+    description = (
+        "Converts the mined word into Anki ruby furigana (e.g. 主役[しゅやく]) and "
+        "writes it to its own field. Uses the reading, when mapped, to pick the "
+        "correct kanji segmentation."
+    )
     input_aliases = ("word",)
     output_alias = "word-furigana"
 

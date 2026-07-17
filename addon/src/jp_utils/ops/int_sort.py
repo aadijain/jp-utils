@@ -18,6 +18,12 @@ from .base import DIRECTION, SortOperation
 class IntSortOperation(SortOperation):
     key = "int-sort"
     label = "Sort by rank"
+    description = (
+        "Reorders the deck's new cards by the integer in the rank field, "
+        "ascending or descending. Both the frequency op and the n+1 sequencer "
+        "write rank, so this orders either. Only changes card order; writes no "
+        "fields."
+    )
     input_aliases = ("rank",)
     params_spec = (DIRECTION,)
 
