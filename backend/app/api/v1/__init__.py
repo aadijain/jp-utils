@@ -7,7 +7,7 @@ here and must never import each other (the boundary that keeps vocab separable).
 
 from fastapi import APIRouter, Depends
 
-from app.api.v1 import mining, text, vocab
+from app.api.v1 import mining, text, translations, vocab
 from app.auth import require_token
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
@@ -26,3 +26,4 @@ def ping() -> dict[str, str]:
 router.include_router(text.router)
 router.include_router(vocab.router)
 router.include_router(mining.router)
+router.include_router(translations.router)
