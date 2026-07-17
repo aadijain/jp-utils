@@ -15,7 +15,9 @@
       "rank": "FreqSort",
       "sentence-audio": "SentenceAudio",
       "sentence-image": "Picture",
-      "sentence-meaning": "Glossary"
+      "sentence-meaning": "Glossary",
+      "notes": "Glossary",
+      "misc-info": "MiscInfo"
     }
   },
   "pipelines": []
