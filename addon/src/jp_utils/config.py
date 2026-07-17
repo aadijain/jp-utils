@@ -51,6 +51,10 @@ ALIASES: tuple[str, ...] = (
     "sentence-audio",
     "sentence-image",
     "sentence-meaning",
+    # Companions to the sentence translation: the translator's learner notes, and
+    # a misc/extra-info field where replaced content is archived.
+    "notes",
+    "misc-info",
     # Free-form user aliases: ten unnamed slots the user can map to arbitrary
     # fields and reference from any op's field params. Unseeded (no DEFAULT_FIELDS
     # entry), so they start unassigned until the user maps them per note type.
@@ -76,6 +80,9 @@ DEFAULT_FIELDS: dict[str, str] = {
     "sentence-audio": "SentenceAudio",
     "sentence-image": "Picture",
     "sentence-meaning": "Glossary",
+    # Translation companions: notes share Glossary (like rank shares FreqSort).
+    "notes": "Glossary",
+    "misc-info": "MiscInfo",
 }
 
 # Seeded note type (user-overridable). Only the note-type STRING is Lapis-bound.

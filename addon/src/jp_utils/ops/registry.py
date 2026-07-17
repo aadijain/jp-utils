@@ -16,6 +16,7 @@ from .sentence_furigana import SentenceFuriganaOperation
 from .set_field import SetFieldOperation
 from .spacing import SpacingOperation
 from .sync_status import SyncWordStatusOperation
+from .translate import AiTranslateOperation
 from .word_audio import WordAudioOperation
 from .word_definition import WordDefinitionOperation
 from .word_furigana import WordFuriganaOperation
@@ -34,6 +35,7 @@ ALL_OPERATIONS: list[Operation] = [
     IntSortOperation(),
     GenerateVocabOperation(),
     SyncWordStatusOperation(),
+    AiTranslateOperation(),
     SetFieldOperation(),
     ClearFormattingOperation(),
     SpacingOperation(),

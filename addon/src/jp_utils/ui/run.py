@@ -29,13 +29,16 @@ from ..ops import (
     NoteFields,
     SortOperation,
     StatusOperation,
+    TranslateOperation,
     plan_generation,
     plan_media,
     plan_operations,
     plan_status,
+    plan_translations,
     resolve_pipeline_steps,
 )
 from ..ops.notes import apply_plan, to_note_fields
+from ..ops.translate import append_raw
 from ..sequencing import stable_sequence
 
 
@@ -55,16 +58,23 @@ class _RunGroup:
     sort_ops: list[ConfiguredOp] = field(default_factory=list)
     gen_ops: list[ConfiguredOp] = field(default_factory=list)
     status_ops: list[ConfiguredOp] = field(default_factory=list)
+    translate_ops: list[ConfiguredOp] = field(default_factory=list)
     notes: list[NoteFields] = field(default_factory=list)
     reviewed: list[NoteFields] = field(default_factory=list)
     status_seen: list[NoteFields] = field(default_factory=list)
     status_learnt: list[NoteFields] = field(default_factory=list)
     status_tagged: dict[str, list[NoteFields]] = field(default_factory=dict)
+    translate_notes: list[NoteFields] = field(default_factory=list)
 
     @property
     def has_ops(self) -> bool:
         return bool(
-            self.field_ops or self.media_ops or self.sort_ops or self.gen_ops or self.status_ops
+            self.field_ops
+            or self.media_ops
+            or self.sort_ops
+            or self.gen_ops
+            or self.status_ops
+            or self.translate_ops
         )
 
 
@@ -148,6 +158,7 @@ def run_pipeline(
                 sort_ops=[c for c in resolved if isinstance(c.operation, SortOperation)],
                 gen_ops=[c for c in resolved if isinstance(c.operation, GenerateOperation)],
                 status_ops=[c for c in resolved if isinstance(c.operation, StatusOperation)],
+                translate_ops=[c for c in resolved if isinstance(c.operation, TranslateOperation)],
             )
         groups[key].notes.append(to_note_fields(int(nid), dict(note.items()), mapping))
         note_type_of[int(nid)] = note_type
@@ -176,6 +187,15 @@ def run_pipeline(
                 if notes:
                     tagged.setdefault(action, []).extend(notes)
             group.status_tagged = tagged
+        if group.translate_ops:
+            # Translate ops act only on notes carrying their whitelist tag (the
+            # tag marks "awaiting translation"; applying a translation removes it).
+            tags = sorted(
+                {t for c in group.translate_ops if (t := getattr(c.operation, "tag", ""))}
+            )
+            if tags:
+                clause = " OR ".join(f"tag:{tag}" for tag in tags)
+                group.translate_notes = _deck_source_notes(mw, group, config, f"({clause})")
 
     work = [g for g in groups.values() if g.has_ops and g.notes]
     if not work:
@@ -185,14 +205,17 @@ def run_pipeline(
 
     client = BackendClient(config.server_url, config.token)
 
-    def task() -> tuple[list, list, list, int]:
+    def task() -> tuple[list, list, list, int, list, int]:
         # The IO-bound backend work runs here: field ops compute their values, media
-        # ops fetch their bytes, generate ops compute their new words, and status ops
+        # ops fetch their bytes, generate ops compute their new words, translate ops
+        # look up (and thereby enqueue) their tagged sentences, and status ops
         # derive + POST their vocab events (a remote store write, so it belongs in the
         # background, not the UI thread). The Anki-collection writes (field, media
-        # attach, sort reposition, note creation) all run on the UI thread afterwards.
-        plans, media_plans, gen_results = [], [], []
+        # attach, sort reposition, note creation, translation apply) all run on the
+        # UI thread afterwards.
+        plans, media_plans, gen_results, translation_plans = [], [], [], []
         auto_entries, tag_entries = [], []
+        n_awaiting = 0
         for group in work:
             if group.field_ops:
                 plans.extend(plan_operations(client, group.field_ops, group.notes))
@@ -200,6 +223,12 @@ def run_pipeline(
                 media_plans.extend(plan_media(client, group.media_ops, group.notes))
             if group.gen_ops:
                 gen_results.extend(plan_generation(client, group.gen_ops, group.reviewed))
+            if group.translate_ops and group.translate_notes:
+                finished = plan_translations(client, group.translate_ops, group.translate_notes)
+                translation_plans.extend(finished)
+                # The lookup enqueues first-seen sentences, so every tagged note
+                # without a finished translation is now (still) awaiting one.
+                n_awaiting += max(len(group.translate_notes) - len(finished), 0)
             if group.status_ops:
                 auto, tagged = plan_status(
                     client,
@@ -219,11 +248,13 @@ def run_pipeline(
             n_synced += client.post("/v1/vocab/words", {"entries": tag_entries, "force": True}).get(
                 "recorded", 0
             )
-        return plans, media_plans, gen_results, n_synced
+        return plans, media_plans, gen_results, n_synced, translation_plans, n_awaiting
 
     def on_done(future) -> None:
         try:
-            plans, media_plans, gen_results, n_synced = future.result()
+            plans, media_plans, gen_results, n_synced, translation_plans, n_awaiting = (
+                future.result()
+            )
         except BackendError as exc:
             _report_failure(parent, exc.message, silent)
             return
@@ -235,14 +266,25 @@ def run_pipeline(
             m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config)
             n_cards = _apply_sorts(mw, work, config)
             n_created = _apply_generation(mw, gen_results, config)
+            n_translated = _apply_translations(mw, translation_plans, config)
         except Exception as exc:  # noqa: BLE001 - surface a media/reposition/create failure
             _report_failure(parent, str(exc), silent)
             return
         n_notes += m_notes
         n_fields += m_fields
-        if on_applied is not None and (n_notes or n_cards or n_created):
+        if on_applied is not None and (n_notes or n_cards or n_created or n_translated):
             on_applied()
-        _report_done(parent, n_notes, n_fields, n_cards, n_created, n_synced, silent)
+        _report_done(
+            parent,
+            n_notes,
+            n_fields,
+            n_cards,
+            n_created,
+            n_synced,
+            n_translated,
+            n_awaiting,
+            silent,
+        )
 
     mw.taskman.run_in_background(task, on_done)
 
@@ -510,8 +552,60 @@ def _existing_word_index(
     return index
 
 
+def _apply_translations(mw, translation_plans: list, config: AddonConfig) -> int:
+    """Write each finished translation onto its note and untag it (UI thread).
+
+    The op's (param-aware) io_spec outputs are positional: ``[0]`` takes the
+    translation, ``[1]`` the rendered notes, and the optional ``[2]`` archives
+    the translation field's previous content before it is overwritten. Notes are
+    written only when non-empty (existing content is never wiped by a
+    translation without notes), and the archive line is skipped when nothing is
+    replaced - so a note re-tagged after completion converges instead of
+    double-archiving. Removing the op's tag is what marks the note done; the
+    next sweep no longer sees it. Returns the number of notes updated.
+    """
+    updated = []
+    for plan in translation_plans:
+        note = mw.col.get_note(NoteId(plan.note_id))
+        mapping = config.note_types.get(note.note_type()["name"])
+        if not mapping:
+            continue
+        outputs = plan.op.io_spec(plan.params).outputs
+        fields = [mapping.get(alias) for alias in outputs]
+        target, notes_field, archive_field = (fields + [None, None, None])[:3]
+        changed = False
+        if target and target in note and plan.translation and note[target] != plan.translation:
+            if archive_field and archive_field in note:
+                archived = append_raw(note[archive_field], note[target])
+                if archived is not None:
+                    note[archive_field] = archived
+                    changed = True
+            note[target] = plan.translation
+            changed = True
+        if notes_field and notes_field in note and plan.notes and note[notes_field] != plan.notes:
+            note[notes_field] = plan.notes
+            changed = True
+        tag = getattr(plan.op, "tag", "")
+        if tag and note.has_tag(tag):
+            note.remove_tag(tag)
+            changed = True
+        if changed:
+            updated.append(note)
+    if updated:
+        mw.col.update_notes(updated)
+    return len(updated)
+
+
 def _report_done(
-    parent, n_notes: int, n_fields: int, n_cards: int, n_created: int, n_synced: int, silent: bool
+    parent,
+    n_notes: int,
+    n_fields: int,
+    n_cards: int,
+    n_created: int,
+    n_synced: int,
+    n_translated: int,
+    n_awaiting: int,
+    silent: bool,
 ) -> None:
     parts = []
     if n_notes:
@@ -522,6 +616,10 @@ def _report_done(
         parts.append(f"created {n_created} card(s)")
     if n_synced:
         parts.append(f"synced {n_synced} word(s)")
+    if n_translated:
+        parts.append(f"translated {n_translated} note(s)")
+    if n_awaiting:
+        parts.append(f"{n_awaiting} awaiting translation")
     if parts:
         tooltip("jp-utils: " + ", ".join(parts) + ".", parent=parent)
     elif not silent:

@@ -148,11 +148,14 @@ class GenerationResult:
 class Operation(ABC):
     """Base contract for a pipeline step: a keyed unit that may read input aliases.
 
-    Subclassed three ways: :class:`FieldOperation` (computes and writes one output
-    field, e.g. furigana/word-meaning/frequency), :class:`SortOperation` (reorders a
-    deck's new cards by a per-note key, writes no field), and
+    Subclassed per kind of effect: :class:`FieldOperation` (computes and writes one
+    output field, e.g. furigana/word-meaning/frequency), :class:`SortOperation`
+    (reorders a deck's new cards by a per-note key, writes no field),
     :class:`MediaOperation` (fetches a media file, attaches it to the collection,
-    and writes a ``[sound:...]``/``<img>`` reference into one output field). The
+    and writes a ``[sound:...]``/``<img>`` reference into one output field),
+    :class:`GenerateOperation` (creates notes in another deck),
+    :class:`StatusOperation` (appends vocab-store events), and
+    :class:`TranslateOperation` (applies queued translations to tagged notes). The
     shared surface is ``key`` / ``label`` / ``input_aliases`` / ``params_spec`` +
     :meth:`applicable`; ``output_alias`` belongs to field/media ops.
     """
@@ -334,6 +337,62 @@ class GenerateOperation(Operation, ABC):
         ``sources`` are the alias-keyed source-note views; the return is aligned to
         it, each entry that note's surviving new words (empty = nothing to create).
         """
+
+
+class TranslateOperation(Operation, ABC):
+    """An operation that applies queued async translations to its tagged notes.
+
+    The sixth op kind. Translation is not computed inline: :meth:`translate` asks
+    the backend queue for each sentence (which enqueues the ones it has never
+    seen) and returns only the finished results - a note whose translation is
+    still pending is simply left alone until a later run. The wiring layer feeds
+    it the deck's notes carrying :attr:`tag` (the whitelist: tagged = wants a
+    translation, and its translation field still holds pre-translation content),
+    writes the finished values on the UI thread, and removes the tag - so an
+    untagged note is done and never touched again.
+
+    Writes several fields per note, so it is not a :class:`FieldOperation`; its
+    outputs are declared through :meth:`Operation.io_spec` and read positionally
+    by the wiring layer: ``outputs[0]`` receives the translation, ``outputs[1]``
+    the translator's notes, and the optional ``outputs[2]`` archives the content
+    the translation replaced.
+    """
+
+    # The fixed Anki tag marking a note as awaiting translation. Hierarchical
+    # `jp::*` keeps it grouped in Anki's tag sidebar (and searchable as
+    # `tag:jp::...`), matching the status ops' tag convention.
+    tag: str = ""
+
+    @abstractmethod
+    def translate(
+        self,
+        client: BackendClient,
+        sources: list[dict[str, str]],
+        params: dict | None = None,
+    ) -> list[dict | None]:
+        """Batch-resolve translations for ``sources`` (aligned in/out).
+
+        Each entry is ``{"translation", "notes"}`` (display-ready values) when the
+        queue has finished that sentence, or ``None`` while it is still pending
+        (the lookup itself enqueues first-seen sentences as its side effect).
+        ``params`` are the step's resolved options.
+        """
+
+
+@dataclass
+class TranslationPlan:
+    """A finished translation to apply to one note on the UI thread.
+
+    ``translation``/``notes`` are display-ready values; the wiring writes them
+    through the op's (param-aware) :meth:`Operation.io_spec` outputs, archives
+    the replaced content when the op asks for it, and removes the op's tag.
+    """
+
+    note_id: int
+    op: TranslateOperation
+    params: dict
+    translation: str = ""
+    notes: str = ""
 
 
 class StatusOperation(Operation, ABC):
@@ -557,3 +616,41 @@ def plan_status(
         unforced.extend(u)
         forced.extend(f)
     return unforced, forced
+
+
+def plan_translations(
+    client: BackendClient,
+    configured: list[ConfiguredOp],
+    notes: list[NoteFields],
+) -> list[TranslationPlan]:
+    """Resolve each :class:`TranslateOperation` over the notes it applies to.
+
+    The background (IO-bound) half of translation: one batched queue lookup per
+    op, which also enqueues first-seen sentences. Returns one
+    :class:`TranslationPlan` per (note, finished translation); still-pending
+    notes yield nothing and stay tagged for a later run. The wiring layer writes
+    the values and removes the tag on the UI thread. Non-translate ops are
+    ignored, so
+    this is safe to call with a pipeline's full op list.
+    """
+    plans: list[TranslationPlan] = []
+    for item in configured:
+        op = item.operation
+        if not isinstance(op, TranslateOperation):
+            continue
+        applicable = [n for n in notes if op.applicable(n.fields, item.params)]
+        if not applicable:
+            continue
+        results = op.translate(client, [n.fields for n in applicable], item.params)
+        for note, result in zip(applicable, results, strict=True):
+            if result is not None:
+                plans.append(
+                    TranslationPlan(
+                        note_id=note.note_id,
+                        op=op,
+                        params=item.params,
+                        translation=result.get("translation", ""),
+                        notes=result.get("notes", ""),
+                    )
+                )
+    return plans

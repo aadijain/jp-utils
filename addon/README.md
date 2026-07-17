@@ -18,7 +18,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 
 ## Concepts
 
-**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `word-meaning`, `sentence-meaning`, `frequency`, `word-audio`, `pitch`, `rank`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
+**Aliases** are logical field names (`word`, `sentence`, `word-reading`, `word-furigana`, `sentence-furigana`, `word-meaning`, `sentence-meaning`, `frequency`, `word-audio`, `pitch`, `rank`, `notes`, `misc-info`). You map each alias to a real field on each of your note types once; operations refer to aliases, so the same pipeline works across note types with different field names.
 
 **Operations** are the units of work. Each reads one or more input aliases and either writes an output field, reorders new cards, or generates new notes.
 
@@ -40,11 +40,14 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
 | `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); a card tagged `jp::learnt` / `jp::ignored` / `jp::blacklisted` instead forces that status, overriding its card state; writes no field |
+| `ai-translate` | Translate sentence via AI queue | `sentence` (required), `sentence-meaning` (optional context) | on notes tagged `jp::translate`: writes a finished AI translation to `sentence-meaning` and its learner notes to `notes`, archives the replaced text into `misc-info` as a `Raw:` line (toggleable), and removes the tag; a sentence not translated yet is queued on the backend and stays tagged for a later run |
 | `set-field` | Set field | none (reads no field) | the `target` field, set to a fixed `value` (any string; empty value clears the field; local-only, no backend call) |
 | `clear-formatting` | Clear formatting | the `target` field (default `sentence`) | the same `target` field (strips HTML in place; local-only, no backend call) |
 | `spacing` | Space words in sentence | the `target` field (default `sentence`) | the same `target` field (inserts a `separator` at word boundaries in place; for plain-text, non-Lapis sentences) |
 
-Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort`, `generate-vocab`, and `sync-word-status` operate over the whole target deck, not just a selected subset.
+Field-writing ops are idempotent (a value is written only when it differs); most accept an `only_if_empty` option. `int-sort`, `generate-vocab`, `sync-word-status`, and `ai-translate` operate over the whole target deck, not just a selected subset.
+
+Translation is asynchronous: `ai-translate` never waits on a translator. Tag a card `jp::translate` to request a translation; each run applies whatever the backend queue has finished (the run tooltip shows how many are still pending). The queue itself is drained by a separate batch translator on the backend host - see the backend README's translation-queue section.
 
 ## Configuration
 
@@ -66,10 +69,11 @@ The operations compose into a single-user study loop:
 1. Mine sentence cards from jp media into a mining deck.
 2. `nplus1-sequence` + `int-sort` auto-order the new cards so each introduces as few new words as possible.
 3. `sentence-furigana` (and friends) auto-enrich the mined cards.
-4. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
-5. The word enrichment ops (reading, meaning, frequency, audio) enrich each new vocab card.
-6. `int-sort` orders the Word deck ascending by frequency rank.
-7. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`. Tagging a card `jp::learnt`, `jp::ignored`, or `jp::blacklisted` forces that status regardless of the card's state.
+4. `ai-translate` fills mined cards tagged `jp::translate` with an AI translation + learner notes as the backend queue finishes them (any original subtitle line is kept as a `Raw:` archive).
+5. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
+6. The word enrichment ops (reading, meaning, frequency, audio) enrich each new vocab card.
+7. `int-sort` orders the Word deck ascending by frequency rank.
+8. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`. Tagging a card `jp::learnt`, `jp::ignored`, or `jp::blacklisted` forces that status regardless of the card's state.
 
 Because `generate-vocab` only creates cards for words still `unknown` or `seen`, a word already `learnt` (or one that already has a card) is never regenerated - the vocab store is the shared known-set both ops read and write.
 
