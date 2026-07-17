@@ -88,6 +88,8 @@ class ConfigDialog(QDialog):
 
         self.setWindowTitle("jp-utils Settings")
         self.setMinimumWidth(640)
+        # QDialog windows get only a close button by default; allow maximizing.
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
         self._tabs = QTabWidget()
         self._tabs.addTab(self._build_connection_tab(config), "Backend")
