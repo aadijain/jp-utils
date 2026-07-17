@@ -27,6 +27,8 @@ class ParamEditorDialog(QDialog):
     def __init__(self, parent, op_key: str, specs: tuple[ParamSpec, ...], values: dict) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{op_key} options")
+        # QDialog windows get only a close button by default; allow maximizing.
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self._specs = specs
         self._widgets: dict = {}
 
