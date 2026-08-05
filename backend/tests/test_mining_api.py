@@ -25,11 +25,16 @@ def mining_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _sort(client: TestClient, headers: dict[str, str], sentences: list[str]) -> list[dict]:
+def _sort(
+    client: TestClient,
+    headers: dict[str, str],
+    sentences: list[str],
+    algorithm: str = "greedy",
+) -> list[dict]:
     resp = client.post(
         "/v1/mining/nplus1sort",
         headers=headers,
-        json={"sentences": [{"text": s} for s in sentences]},
+        json={"sentences": [{"text": s} for s in sentences], "algorithm": algorithm},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -49,6 +54,43 @@ def test_nplus1_orders_fewest_new_words_first(
     lemmas_1 = [w["lemma"] for w in results[1]["words"]]
     assert "魚" in lemmas_1 and "食べる" in lemmas_1
     assert body["version"] == vocab_store.status().version
+
+
+def test_fuzzy_algorithm_is_selectable(
+    mining_client: TestClient, vocab_store: VocabStore, auth_headers: dict[str, str]
+) -> None:
+    # Same batch, the other orderer: still a valid ordering, still fewest-first.
+    vocab_store.record([RecordEntry(lemma="食べる", reading="たべる")])
+    body = _sort(
+        mining_client,
+        auth_headers,
+        ["猫が魚を食べる", "魚を食べる", "犬が猫を食べる"],
+        algorithm="fuzzy",
+    )
+    results = body["results"]
+    assert sorted(r["sequence"] for r in results) == [0, 1, 2]
+    assert results[1]["sequence"] == 0  # the single-unknown sentence still leads
+
+
+def test_unknown_algorithm_is_rejected(
+    mining_client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    # No silent fallback: ordering a deck by the wrong algorithm is worse than failing.
+    resp = mining_client.post(
+        "/v1/mining/nplus1sort",
+        headers=auth_headers,
+        json={"sentences": [{"text": "猫"}], "algorithm": "nonesuch"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "unknown_algorithm"
+
+
+def test_algorithm_is_required(mining_client: TestClient, auth_headers: dict[str, str]) -> None:
+    resp = mining_client.post(
+        "/v1/mining/nplus1sort", headers=auth_headers, json={"sentences": [{"text": "猫"}]}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "unknown_algorithm"
 
 
 def test_sort_populates_tokenization_cache(
@@ -76,7 +118,9 @@ def test_works_without_dict_cache(
 
 def test_requires_tokenizer(vocab_client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = vocab_client.post(
-        "/v1/mining/nplus1sort", headers=auth_headers, json={"sentences": [{"text": "猫"}]}
+        "/v1/mining/nplus1sort",
+        headers=auth_headers,
+        json={"sentences": [{"text": "猫"}], "algorithm": "greedy"},
     )
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "tokenizer_unavailable"
@@ -84,12 +128,16 @@ def test_requires_tokenizer(vocab_client: TestClient, auth_headers: dict[str, st
 
 def test_requires_vocab_store(text_client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = text_client.post(
-        "/v1/mining/nplus1sort", headers=auth_headers, json={"sentences": [{"text": "猫"}]}
+        "/v1/mining/nplus1sort",
+        headers=auth_headers,
+        json={"sentences": [{"text": "猫"}], "algorithm": "greedy"},
     )
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "vocab_unavailable"
 
 
 def test_requires_auth(client: TestClient) -> None:
-    resp = client.post("/v1/mining/nplus1sort", json={"sentences": [{"text": "猫"}]})
+    resp = client.post(
+        "/v1/mining/nplus1sort", json={"sentences": [{"text": "猫"}], "algorithm": "greedy"}
+    )
     assert resp.status_code == 401
