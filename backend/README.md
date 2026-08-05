@@ -45,9 +45,20 @@ The store is portable plain SQLite and is designed to be extractable into its ow
 
 | Endpoint | What it does |
 |---|---|
-| `POST /nplus1sort` | Given a batch of sentences, return a study order that introduces as few new words as possible at each step (greedy n+1), scored against your known-words list |
+| `POST /nplus1sort` | Given a batch of sentences and an `algorithm` name, return a study order that introduces as few new words as possible at each step (n+1), scored against your known-words list |
 
 The add-on uses this to order a mining deck's new-card queue. More mining endpoints can join this layer as the workflow grows.
+
+### Ordering algorithms
+
+Both walk the same frontier - place a sentence, treat its words as learnt, watch every other sentence's unknown count drop - and differ only in how they pick the next sentence off it. `algorithm` is required; an unknown name is a `400 unknown_algorithm` rather than a silent fallback.
+
+| `algorithm` | How it picks |
+|---|---|
+| `greedy` | Strict fewest-new-words, then a lexicographic tie-break on the rarest new word, sentence length, and mined order |
+| `fuzzy` | One weighted cost blending unknown count (superlinear), each new word's JPDB rarity, how few other sentences in the batch it unlocks, and sentence length |
+
+`greedy` never trades an extra unknown word for anything; `fuzzy` will, but only when the alternative is a single dead-end word - one that is rare *and* appears nowhere else in the batch - in a long sentence. Its weights are constants at the top of `app/mining/ordering/fuzzy.py`.
 
 ## Translation queue (`/v1/translations/*`)
 
