@@ -18,6 +18,7 @@ grows a branch. There is deliberately no default: callers name the algorithm.
 from collections.abc import Mapping
 from typing import Protocol
 
+from app.mining.ordering.fuzzy import fuzzy_order
 from app.mining.ordering.greedy import greedy_order
 
 
@@ -32,6 +33,6 @@ class Orderer(Protocol):
     ) -> list[int]: ...
 
 
-ALGORITHMS: dict[str, Orderer] = {"greedy": greedy_order}
+ALGORITHMS: dict[str, Orderer] = {"greedy": greedy_order, "fuzzy": fuzzy_order}
 
-__all__ = ["ALGORITHMS", "Orderer", "greedy_order"]
+__all__ = ["ALGORITHMS", "Orderer", "fuzzy_order", "greedy_order"]
