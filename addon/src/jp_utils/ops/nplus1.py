@@ -3,10 +3,13 @@
 Orders the new-card queue so each successive card introduces as few unknown words
 as possible (i+1 sentence sequencing). The whole batch of sentences is sent to
 ``POST /v1/mining/nplus1sort``; the backend tokenizes them, scores each against the
-learnt set, and returns a greedy ordering as a 0-based sequence number per card.
-This op only *writes* that number into the ``rank`` field (the shared sort key the
-int-sort op also orders by) - actually repositioning the cards by it is a separate
-sort op.
+learnt set, and returns an ordering as a 0-based sequence number per card. This op
+only *writes* that number into the ``rank`` field (the shared sort key the int-sort
+op also orders by) - actually repositioning the cards by it is a separate sort op.
+
+The ``algorithm`` param picks which of the backend's orderers runs. That is the
+whole of the add-on's say in it: the algorithms' tuning (weights, thresholds) lives
+in the backend, so this side stays a choice between named behaviours.
 
 Unlike the other field ops this is a **global** computation (every card's number
 depends on the whole batch), so it always recomputes (no ``only_if_empty``) and is
@@ -19,7 +22,13 @@ import re
 
 from ..client import BackendClient
 from ..sequencing import stable_sequence
-from .base import FieldOperation
+from .base import FieldOperation, ParamSpec
+
+# Backend ordering algorithms, by name (`app.mining.ordering.ALGORITHMS`). The
+# backend has no default and rejects a name it does not know, so the op always
+# sends one.
+_ALGORITHMS = ("greedy", "fuzzy")
+_DEFAULT_ALGORITHM = "greedy"
 
 # Drop ruby readings entirely (``<rt>``/``<rp>`` content), then any remaining tags;
 # unescape what's left. Tokenizing the base text only - readings would be noise.
@@ -52,14 +61,31 @@ class Nplus1SequenceOperation(FieldOperation):
     )
     input_aliases = ("sentence",)
     output_alias = "rank"
-    params_spec = ()  # no only_if_empty: the order is global and must always recompute
+    # No only_if_empty: the order is global and must always recompute.
+    params_spec = (
+        ParamSpec(
+            "algorithm",
+            "Ordering algorithm",
+            "choice",
+            default=_DEFAULT_ALGORITHM,
+            choices=_ALGORITHMS,
+            description=(
+                "greedy: strictly fewest new words first. fuzzy: also weighs how rare "
+                "each new word is, how many other sentences it unlocks, and sentence "
+                "length - so a lone rare, dead-end word can lose to two common ones."
+            ),
+        ),
+    )
 
     def compute(
         self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
     ) -> list[str | None]:
         n = len(sources)
+        algorithm = (params or {}).get("algorithm") or _DEFAULT_ALGORITHM
         sentences = [{"text": strip_markup(s.get("sentence", ""))} for s in sources]
-        resp = client.post("/v1/mining/nplus1sort", {"sentences": sentences})
+        resp = client.post(
+            "/v1/mining/nplus1sort", {"sentences": sentences, "algorithm": algorithm}
+        )
         results = resp.get("results", [])
 
         # Backend study-order rank (0-based) per card; cards without one are left

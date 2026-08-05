@@ -36,7 +36,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `frequency` | Fetch frequency rank | `word` | `frequency` |
 | `word-audio` | Fetch word audio | `word`, `word-reading` | `word-audio` (attaches media, writes `[sound:…]`) |
 | `pitch` | Fetch pitch accent | `word`, `word-reading` | `pitch` (downstep position(s); Lapis renders + colors from it) |
-| `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch) |
+| `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch; the `algorithm` param picks `greedy` or `fuzzy`) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
 | `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
 | `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); a card tagged `jp::learnt` / `jp::ignored` / `jp::blacklisted` instead forces that status, overriding its card state; writes no field |
@@ -67,7 +67,7 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 The operations compose into a single-user study loop:
 
 1. Mine sentence cards from jp media into a mining deck.
-2. `nplus1-sequence` + `int-sort` auto-order the new cards so each introduces as few new words as possible.
+2. `nplus1-sequence` + `int-sort` auto-order the new cards so each introduces as few new words as possible. Its `algorithm` param chooses how: `greedy` is strictly fewest-new-words-first, `fuzzy` also weighs how rare each new word is, how many other sentences it unlocks, and how long the sentence is. The tuning behind those names lives in the backend.
 3. `sentence-furigana` (and friends) auto-enrich the mined cards.
 4. `ai-translate` fills mined cards tagged `jp::translate` with an AI translation + learner notes as the backend queue finishes them (any original subtitle line is kept as a `Raw:` archive).
 5. `generate-vocab` auto-creates vocab notes in a Word deck for the sentence's words that are new to you (checked against the backend vocab store).
