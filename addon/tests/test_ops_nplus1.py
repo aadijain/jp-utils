@@ -31,9 +31,29 @@ def test_sends_stripped_sentences_and_orders_by_sequence():
     assert client.calls == [
         (
             "/v1/mining/nplus1sort",
-            {"sentences": [{"text": "猫が魚を食べる"}, {"text": "魚を食べる"}]},
+            {
+                "sentences": [{"text": "猫が魚を食べる"}, {"text": "魚を食べる"}],
+                "algorithm": "greedy",
+            },
         )
     ]
+
+
+def test_algorithm_param_selects_the_backend_orderer():
+    client = _FakeClient({"results": [{"sequence": 0}]})
+    Nplus1SequenceOperation().compute(client, [{"sentence": "猫"}], {"algorithm": "fuzzy"})
+    assert client.calls[0][1]["algorithm"] == "fuzzy"
+
+
+def test_algorithm_defaults_to_greedy_when_unset():
+    # The backend has no default and rejects an empty name, so the op must always
+    # send one - including for pipelines stored before the param existed.
+    op = Nplus1SequenceOperation()
+    assert [spec.key for spec in op.params_spec] == ["algorithm"]
+    for params in (None, {}, {"algorithm": ""}):
+        client = _FakeClient({"results": [{"sequence": 0}]})
+        op.compute(client, [{"sentence": "猫"}], params)
+        assert client.calls[0][1]["algorithm"] == "greedy"
 
 
 def test_missing_results_leave_fields_unchanged():
@@ -51,7 +71,6 @@ def test_recomputes_even_when_rank_already_filled():
     # No only_if_empty: a reorder must rewrite already-numbered notes. Two notes,
     # backend flips their order -> the field values must flip too.
     op = Nplus1SequenceOperation()
-    assert op.params_spec == ()
     client = _FakeClient({"results": [{"sequence": 1}, {"sequence": 0}]})
     notes = [
         NoteFields(note_id=1, fields={"sentence": "a", "rank": "10"}),
