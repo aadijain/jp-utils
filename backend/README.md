@@ -147,7 +147,7 @@ app/
     v1/            text.py, vocab.py, mining.py, translations.py routers (bearer-guarded)
   text/            tokenizer, inflection, furigana, convert, meaning, frequency, normalize, words, audio, spacing
   vocab/           store.py (the event ledger)
-  mining/          ordering.py (pure greedy n+1) + sort.py (text + vocab composition)
+  mining/          ordering/ (pure n+1 algorithms, keyed by name) + sort.py (text + vocab composition)
   translations/    queue.py (the async sentence-translation queue)
   dicts/           parsers + read-only SQLite cache over the three dictionaries
   cache/           tokenization cache (derived, disposable)

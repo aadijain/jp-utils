@@ -35,4 +35,4 @@ def nplus1sort(
     tok_cache: TokenizationCache | None = Depends(get_tokenization_cache),
 ) -> Nplus1SortResponse:
     """Order the new-card queue n+1 (fewest new words first). Aligned with `req.sentences`."""
-    return nplus1_sort(req.sentences, tokenizer, store, cache, req.mode, tok_cache)
+    return nplus1_sort(req.sentences, tokenizer, store, cache, "greedy", req.mode, tok_cache)

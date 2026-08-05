@@ -1,4 +1,4 @@
-"""Greedy n+1 ordering of sentences (the algorithmic heart of the n+1 sort).
+"""Greedy n+1 ordering of sentences (the original n+1 sort algorithm).
 
 Orders a set of sentences so each successive one introduces as few *new* words as
 possible given everything studied before it - "i+1" sentence sequencing. The goal
@@ -22,6 +22,8 @@ the smallest key; stale entries are skipped via a `placed` flag (lazy deletion).
 Pure: no tokenizer, no store. Callers pass each sentence's distinct content lemmas
 (:func:`app.text.words.content_words`), the known-lemma set (resolved lemma-only
 via `VocabStore.filter_by_status`, see `app.mining.sort`), and a lemma -> rank map.
+This is one of the interchangeable orderers registered in `ordering/__init__.py`;
+`fuzzy.py` is the weighted-cost alternative.
 """
 
 import heapq
@@ -30,7 +32,7 @@ from collections.abc import Mapping
 _INF = float("inf")
 
 
-def nplus1_order(
+def greedy_order(
     sentences: list[list[str]],
     known: set[str],
     ranks: Mapping[str, int],

@@ -2,15 +2,16 @@
 
 This is the composition tail that wires the stateless text service (tokenization)
 to the stateful vocab store (the known set) - the impure half of `app/mining`,
-kept out of the API router so the endpoint is thin marshalling only. The greedy
-itself stays pure in `ordering.py`; this layer feeds it.
+kept out of the API router so the endpoint is thin marshalling only. The ordering
+algorithms themselves stay pure in `ordering/`; this layer resolves their inputs
+and feeds the one the caller named.
 """
 
 from collections.abc import Sequence
 
 from app.cache import TokenizationCache
 from app.dicts import DictCache
-from app.mining.ordering import nplus1_order
+from app.mining.ordering import ALGORITHMS
 from app.text.tokenizer import Tokenizer
 from app.text.words import content_words_with_readings
 from app.vocab import VocabStore
@@ -66,10 +67,16 @@ def nplus1_sort(
     tokenizer: Tokenizer,
     store: VocabStore,
     cache: DictCache | None,
+    algorithm: str,
     mode: SplitMode = SplitMode.C,
     tok_cache: TokenizationCache | None = None,
 ) -> Nplus1SortResponse:
-    """Score + greedily order the new-card queue n+1. Result aligns with `sentences`."""
+    """Score + order the new-card queue n+1. Result aligns with `sentences`.
+
+    `algorithm` names an entry in :data:`app.mining.ordering.ALGORITHMS`; there is
+    no default, and an unknown name is a `KeyError` (the router validates first, so
+    it never reaches here).
+    """
     # Each card's content words; the extractor memoizes per sentence in `tok_cache`.
     word_lists: list[list[VocabWord]] = [
         content_words_with_readings(tokenizer, s.text, mode, tok_cache) for s in sentences
@@ -77,7 +84,7 @@ def nplus1_sort(
     lemma_lists = [[w.lemma for w in words] for words in word_lists]
     known = _known_lemmas(store, lemma_lists)
 
-    order = nplus1_order(lemma_lists, known, _lemma_ranks(lemma_lists, cache))
+    order = ALGORITHMS[algorithm](lemma_lists, known, _lemma_ranks(lemma_lists, cache))
     sequence = [0] * len(sentences)
     for position, index in enumerate(order):
         sequence[index] = position
