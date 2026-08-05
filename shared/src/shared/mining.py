@@ -5,11 +5,11 @@ stateless text service (tokenization) with the stateful vocab store (the known
 set), so they live in their own module rather than under `text` or `vocab` - the
 two halves still must not import each other.
 
-n+1 sort: the add-on sends the new cards' sentences; the backend tokenizes them
-into content words, scores each against the known set (lemma-only), and returns a
-greedy "fewest new words at each step" ordering as a per-card sequence number. The
-add-on writes that number into a `rank` field; repositioning by it is a separate
-concern.
+n+1 sort: the add-on sends the new cards' sentences plus the name of the ordering
+algorithm to run; the backend tokenizes them into content words, scores each
+against the known set (lemma-only), and returns a "fewest new words at each step"
+ordering as a per-card sequence number. The add-on writes that number into a `rank`
+field; repositioning by it is a separate concern.
 """
 
 from dataclasses import dataclass, field
@@ -32,7 +32,18 @@ class MiningSentence:
 
 @dataclass
 class Nplus1SortRequest:
+    """A whole new-card queue to order, and which ordering algorithm to use.
+
+    `algorithm` names one of the backend's interchangeable orderers - `"greedy"`
+    (strict fewest-new-words, lexicographic tie-breaks) or `"fuzzy"` (one weighted
+    cost over unknown count, word rarity, in-batch leverage and sentence length).
+    It is *required*: the empty default exists only so the field can be added
+    without breaking dataclass construction, and the backend rejects it rather
+    than picking an algorithm on the caller's behalf.
+    """
+
     sentences: list[MiningSentence]  # batch-first: the whole new-card queue in mined order
+    algorithm: str = ""
     mode: SplitMode = SplitMode.C
 
 
