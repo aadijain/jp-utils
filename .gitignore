@@ -28,3 +28,6 @@ backend/data/dict/
 # Add-on build artifacts (shared/ is vendored in at build time; the zip is output)
 addon/src/jp_utils/_vendor/
 addon/dist/
+
+# Add-on runtime data (the edit log, written beside the installed add-on)
+addon/src/jp_utils/user_files/
