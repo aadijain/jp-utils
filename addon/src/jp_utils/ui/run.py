@@ -13,10 +13,12 @@ Imports ``aqt`` and so loads only inside Anki; the pure pieces it builds on
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from anki.notes import NoteId
 from aqt.utils import showInfo, showWarning, tooltip
 
+from .. import editlog
 from ..client import BackendClient, BackendError
 from ..config import AddonConfig, find_pipeline, load
 from ..generation import context_aliases, word_key
@@ -89,10 +91,69 @@ class _RunGroup:
         )
 
 
+class _EditLog:
+    """Collects one run's edit-log lines, written in a single append at the end.
+
+    Holds the ``(note type, alias) -> op key`` index the field path needs (see
+    :func:`_alias_ops`). Buffering keeps a sweep to one file write; the actual
+    append is best-effort (see :mod:`jp_utils.editlog`).
+    """
+
+    def __init__(self, alias_ops: dict[tuple[str, str], str]):
+        self.alias_ops = alias_ops
+        self.entries: list[dict] = []
+
+    def note(self, mw, action, note, note_type, note_id, fields, ops, deck=None) -> None:
+        """Record one note's write; ``deck`` defaults to the note's own deck."""
+        self.entries.append(
+            editlog.note_entry(
+                action,
+                _note_deck(mw, note) if deck is None else deck,
+                note_type,
+                note_id,
+                _note_card_id(note),
+                fields,
+                ops,
+            )
+        )
+
+    def sort(self, deck, note_type, count, ops) -> None:
+        self.entries.append(editlog.sort_entry(deck, note_type, count, ops))
+
+    def flush(self) -> None:
+        editlog.append(editlog.default_path(), self.entries)
+        self.entries = []
+
+
 def _note_deck(mw, note) -> str:
     """The deck name of a note's first card ("" if it somehow has none)."""
     cards = note.cards()
     return mw.col.decks.name(cards[0].did) if cards else ""
+
+
+def _note_card_id(note) -> int | None:
+    """The note's first card id (``None`` if it somehow has none).
+
+    These operations edit note fields, which every card of the note shares, so
+    the edit log records the first card the same way :func:`_note_deck` picks the
+    deck.
+    """
+    cards = note.cards()
+    return cards[0].id if cards else None
+
+
+def _alias_ops(groups) -> dict[tuple[str, str], str]:
+    """Map ``(note type, output alias)`` -> the field op key that writes it.
+
+    A :class:`~jp_utils.ops.base.NotePlan` carries aliases, not the op that
+    produced them, so the edit log resolves the responsible op through this.
+    """
+    index: dict[tuple[str, str], str] = {}
+    for group in groups:
+        for configured in group.field_ops:
+            for alias in configured.operation.io_spec(configured.params).outputs:
+                index[(group.note_type, alias)] = configured.operation.key
+    return index
 
 
 def _deck_source_notes(mw, group: _RunGroup, config: AddonConfig, only: str = "") -> list:
@@ -272,15 +333,18 @@ def run_pipeline(
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             _report_failure(parent, str(exc), silent)
             return
-        n_notes, n_fields = _apply_plans(mw, plans, note_type_of, config)
+        log = _EditLog(_alias_ops(work))
+        n_notes, n_fields = _apply_plans(mw, plans, note_type_of, config, log)
         try:
-            m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config)
-            n_cards = _apply_sorts(mw, work, config)
-            gen = _apply_generation(mw, gen_results, config)
-            n_translated = _apply_translations(mw, translation_plans, config)
+            m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config, log)
+            n_cards = _apply_sorts(mw, work, config, log)
+            gen = _apply_generation(mw, gen_results, config, log)
+            n_translated = _apply_translations(mw, translation_plans, config, log)
         except Exception as exc:  # noqa: BLE001 - surface a media/reposition/create failure
+            log.flush()  # keep what already landed on disk before bailing out
             _report_failure(parent, str(exc), silent)
             return
+        log.flush()
         n_notes += m_notes
         n_fields += m_fields
         if on_applied is not None and (n_notes or n_cards or gen or n_translated):
@@ -349,17 +413,21 @@ def _report_failure(parent, message: str, silent: bool) -> None:
         showWarning(f"Pipeline failed: {message}", parent=parent)
 
 
-def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig) -> tuple[int, int]:
+def _apply_plans(
+    mw, plans, note_type_of: dict[int, str], config: AddonConfig, log: _EditLog
+) -> tuple[int, int]:
     """Write the planned field updates back onto the notes (UI thread).
 
     Returns ``(notes_updated, fields_changed)``; messaging is left to the caller
-    so field writes and sort reordering can be reported together.
+    so field writes and sort reordering can be reported together. Each written
+    note also gets one ``field`` line in the edit log.
     """
     updated = []
     changed_fields = 0
     for plan in plans:
         note = mw.col.get_note(NoteId(plan.note_id))
-        mapping = config.note_types[note_type_of[plan.note_id]]
+        note_type = note_type_of[plan.note_id]
+        mapping = config.note_types[note_type]
         fields = dict(note.items())
         names = apply_plan(plan, fields, mapping)
         if not names:
@@ -368,6 +436,15 @@ def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig) -
             note[name] = fields[name]
         updated.append(note)
         changed_fields += len(names)
+        log.note(
+            mw,
+            "field",
+            note,
+            note_type,
+            plan.note_id,
+            names,
+            [log.alias_ops.get((note_type, u.alias), "") for u in plan.updates],
+        )
 
     if updated:
         mw.col.update_notes(updated)
@@ -375,7 +452,7 @@ def _apply_plans(mw, plans, note_type_of: dict[int, str], config: AddonConfig) -
 
 
 def _apply_media(
-    mw, media_plans, note_type_of: dict[int, str], config: AddonConfig
+    mw, media_plans, note_type_of: dict[int, str], config: AddonConfig, log: _EditLog
 ) -> tuple[int, int]:
     """Attach each media plan's bytes to the collection and write its field (UI thread).
 
@@ -394,8 +471,9 @@ def _apply_media(
     changed_fields = 0
     for note_id, plans in by_note.items():
         note = mw.col.get_note(NoteId(note_id))
-        mapping = config.note_types[note_type_of[note_id]]
-        changed_here = 0
+        note_type = note_type_of[note_id]
+        mapping = config.note_types[note_type]
+        names, ops = [], []
         for plan in plans:
             outputs = plan.op.io_spec(plan.params).outputs
             field_name = mapping.get(outputs[0]) if outputs else None
@@ -405,18 +483,24 @@ def _apply_media(
             value = plan.op.render(filename)
             if note[field_name] != value:
                 note[field_name] = value
-                changed_here += 1
-        if changed_here:
+                names.append(field_name)
+                ops.append(plan.op.key)
+        if names:
             updated.append(note)
-            changed_fields += changed_here
+            changed_fields += len(names)
+            log.note(mw, "media", note, note_type, note_id, names, ops)
 
     if updated:
         mw.col.update_notes(updated)
     return len(updated), changed_fields
 
 
-def _apply_sorts(mw, work: list[_RunGroup], config: AddonConfig) -> int:
-    """Reposition each sort-pipeline group's new cards; return total cards moved."""
+def _apply_sorts(mw, work: list[_RunGroup], config: AddonConfig, log: _EditLog) -> int:
+    """Reposition each sort-pipeline group's new cards; return total cards moved.
+
+    A sweep can move hundreds of cards, so the edit log gets one summary line per
+    group rather than one per card.
+    """
     moved = 0
     for group in work:
         if not group.sort_ops:
@@ -424,7 +508,12 @@ def _apply_sorts(mw, work: list[_RunGroup], config: AddonConfig) -> int:
         mapping = config.note_types.get(group.note_type)
         if not mapping:
             continue
-        moved += _reorder_new_cards(mw, group.deck, group.note_type, group.sort_ops, mapping)
+        moved_here = _reorder_new_cards(mw, group.deck, group.note_type, group.sort_ops, mapping)
+        if moved_here:
+            log.sort(
+                group.deck, group.note_type, moved_here, [c.operation.key for c in group.sort_ops]
+            )
+        moved += moved_here
     return moved
 
 
@@ -467,7 +556,7 @@ def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: d
     return len(moved)
 
 
-def _apply_generation(mw, gen_results: list, config: AddonConfig) -> _GenCounts:
+def _apply_generation(mw, gen_results: list, config: AddonConfig, log: _EditLog) -> _GenCounts:
     """Create a target-deck note per new word (UI thread); return what it did.
 
     Dedups by ``(word, word-reading)`` note existence in the target deck (homographs
@@ -498,7 +587,7 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig) -> _GenCounts:
         # arrives from several source sentences, and loading it twice would hand
         # `update_notes` two objects for one note - the later write dropping the
         # earlier one's fields. `dirty` is the subset something actually changed on.
-        loaded: dict[object, object] = {}
+        loaded: dict[object, Any] = {}
         dirty: dict[object, object] = {}
         for result in results:
             on_existing = result.params.get("on_existing", "skip")
@@ -527,15 +616,36 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig) -> _GenCounts:
                         note = loaded.get(nid)
                         if note is None:
                             note = loaded[nid] = mw.col.get_note(nid)
-                        if _fill_note(note, target_mapping, copy, reading, src_fields):
+                        names = _fill_note(note, target_mapping, copy, reading, src_fields)
+                        if names:
                             dirty[nid] = note
+                            log.note(
+                                mw,
+                                "field",
+                                note,
+                                note_type,
+                                int(note.id),
+                                names,
+                                [result.op.key],
+                                deck=deck,
+                            )
                     continue
                 note = mw.col.new_note(model)
                 note[word_field] = lemma
-                _fill_note(note, target_mapping, copy, reading, src_fields)
+                names = _fill_note(note, target_mapping, copy, reading, src_fields)
                 mw.col.add_note(note, deck_id)
                 existing[key] = note.id
                 counts.created += 1
+                log.note(
+                    mw,
+                    "create",
+                    note,
+                    note_type,
+                    int(note.id),
+                    [word_field] + names,
+                    [result.op.key],
+                    deck=deck,
+                )
 
         if dirty:
             mw.col.update_notes(list(dirty.values()))
@@ -543,19 +653,23 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig) -> _GenCounts:
     return counts
 
 
-def _fill_note(note, mapping: dict, copy: list, reading: str, src_fields: dict) -> bool:
-    """Seed word-reading + copy context onto ``note``; return True if anything changed."""
-    changed = False
+def _fill_note(note, mapping: dict, copy: list, reading: str, src_fields: dict) -> list[str]:
+    """Seed word-reading + copy context onto ``note``; return the fields changed.
+
+    The list doubles as the "anything changed?" flag callers test, and feeds the
+    edit log.
+    """
+    changed: list[str] = []
     reading_field = mapping.get("word-reading")
     if reading_field and reading_field in note and note[reading_field] != reading:
         note[reading_field] = reading
-        changed = True
+        changed.append(reading_field)
     for alias in copy:
         field = mapping.get(alias)
         value = src_fields.get(alias, "")
         if field and field in note and note[field] != value:
             note[field] = value
-            changed = True
+            changed.append(field)
     return changed
 
 
@@ -594,7 +708,7 @@ def _existing_word_index(
     return index
 
 
-def _apply_translations(mw, translation_plans: list, config: AddonConfig) -> int:
+def _apply_translations(mw, translation_plans: list, config: AddonConfig, log: _EditLog) -> int:
     """Write each finished translation onto its note and untag it (UI thread).
 
     The op's (param-aware) io_spec outputs are positional: ``[0]`` takes the
@@ -609,30 +723,32 @@ def _apply_translations(mw, translation_plans: list, config: AddonConfig) -> int
     updated = []
     for plan in translation_plans:
         note = mw.col.get_note(NoteId(plan.note_id))
-        mapping = config.note_types.get(note.note_type()["name"])
+        note_type = note.note_type()["name"]
+        mapping = config.note_types.get(note_type)
         if not mapping:
             continue
         outputs = plan.op.io_spec(plan.params).outputs
         fields = [mapping.get(alias) for alias in outputs]
         target, notes_field, archive_field = (fields + [None, None, None])[:3]
-        changed = False
+        names: list[str] = []
         if target and target in note and plan.translation and note[target] != plan.translation:
             if archive_field and archive_field in note:
                 archived = append_raw(note[archive_field], note[target])
                 if archived is not None:
                     note[archive_field] = archived
-                    changed = True
+                    names.append(archive_field)
             note[target] = plan.translation
-            changed = True
+            names.append(target)
         if notes_field and notes_field in note and plan.notes and note[notes_field] != plan.notes:
             note[notes_field] = plan.notes
-            changed = True
+            names.append(notes_field)
         tag = getattr(plan.op, "tag", "")
-        if tag and note.has_tag(tag):
+        untagged = bool(tag and note.has_tag(tag))
+        if untagged:
             note.remove_tag(tag)
-            changed = True
-        if changed:
+        if names or untagged:
             updated.append(note)
+            log.note(mw, "translate", note, note_type, plan.note_id, names, [plan.op.key])
     if updated:
         mw.col.update_notes(updated)
     return len(updated)

@@ -62,6 +62,18 @@ Configure from **Tools -> jp-utils Settings…**, which has three tabs:
 - **Manual** - the Pipelines tab's **Run now** button (runs the pipeline over its deck), the **Tools -> jp-utils: Run all pipelines** action (runs every enabled pipeline over its deck at once), or the Browser **Notes -> jp-utils: Run pipeline** action over the selected notes.
 - **Automatic** - a pipeline that opts into the **start** trigger runs silently when Anki starts.
 
+## Edit log
+
+Every collection write a pipeline makes is appended to `user_files/edits.jsonl` inside the installed add-on folder - one JSON object per line, one line per note per run:
+
+```json
+{"time":"2026-08-12T15:49:36","action":"field","deck":"Mining","note_type":"Lapis","note_id":11,"card_id":99,"fields":["Reading"],"ops":["word-reading"]}
+```
+
+`action` is one of `field` (an enrichment wrote a field), `media` (an audio/image file was attached), `create` (a vocab note was generated), `translate` (a queued translation was applied), or `sort` (new cards were repositioned - summarised per deck as `cards_moved`, not one line per card). Field *values* are not recorded, only which fields changed.
+
+The file rotates to `edits.jsonl.1` once it passes 512 KB and only that one older generation is kept, so the log costs at most about a megabyte. Logging is best-effort: if it cannot be written, the run carries on regardless.
+
 ## The mining loop
 
 The operations compose into a single-user study loop:
@@ -93,6 +105,7 @@ src/jp_utils/
   entry.py           setup(): Tools menu, Browser hook, auto-run lifecycle hooks
   client.py          BackendClient - the only network seam (urllib)
   config.py          AddonConfig: aliases, note-type field maps, pipelines
+  editlog.py         the JSONL record of what each run wrote (no aqt)
   generation.py      pure helpers for vocab-card generation (no aqt)
   ops/               the operations (see registry.py for the assembled list)
   ui/                config_dialog, params_dialog, run (the pipeline runner), auto, browser
