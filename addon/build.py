@@ -64,9 +64,20 @@ def build_zip() -> Path:
 def install(addons_dir: Path) -> Path:
     """Drop an unzipped copy into a local Anki ``addons21`` dir (dev convenience)."""
     target = addons_dir / "jp_utils"
+    # The edit log (and anything else Anki keeps in user_files) must survive a
+    # re-install, so it is moved aside while the old copy is wiped.
+    preserved = None
     if target.exists():
+        user_files = target / "user_files"
+        if user_files.exists():
+            preserved = addons_dir / ".jp_utils_user_files"
+            if preserved.exists():
+                shutil.rmtree(preserved)
+            shutil.move(str(user_files), str(preserved))
         shutil.rmtree(target)
     shutil.copytree(PKG_DIR, target, ignore=_IGNORE)
+    if preserved is not None:
+        shutil.move(str(preserved), str(target / "user_files"))
     return target
 
 
