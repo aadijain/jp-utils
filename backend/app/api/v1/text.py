@@ -28,7 +28,7 @@ from app.text.normalize import normalize
 from app.text.pitch import lookup_pitch
 from app.text.spacing import space_text
 from app.text.tokenizer import Tokenizer
-from app.text.words import content_words_with_readings
+from app.text.words import content_words_batch
 from shared.text import (
     AudioRequest,
     AudioResponse,
@@ -138,9 +138,10 @@ def content_words(
 
     POS content-filter + contextual reading per word - the stateless half
     generation composes with the vocab status filter. The tokenization cache is
-    consulted transparently inside the extractor (mode C only).
+    consulted transparently inside the extractor (mode C only), once for the whole
+    batch rather than once per text.
     """
-    results = [content_words_with_readings(tokenizer, text, req.mode, cache) for text in req.texts]
+    results = content_words_batch(tokenizer, req.texts, req.mode, cache)
     return ContentWordsResponse(results=results)
 
 
