@@ -105,14 +105,19 @@ def _match_span(segments: list[dict]) -> tuple[int, int] | None:
     return None
 
 
-def highlight(text: str, segments: list[dict]) -> str | None:
-    """Wrap the located span in ``<b>``; None if nothing to do (no match / already bold)."""
+def highlight(text: str, segments: list[dict], atoms: list[Atom] | None = None) -> str | None:
+    """Wrap the located span in ``<b>``; None if nothing to do (no match / already bold).
+
+    ``atoms`` lets a caller that already parsed ``text`` (to build the backend's
+    plain text) hand the parse over instead of paying for it twice.
+    """
     span = _match_span(segments)
     if span is None:
         return None
     start, end = span
 
-    atoms = parse_atoms(text)
+    if atoms is None:
+        atoms = parse_atoms(text)
     matched: list[int] = []
     offset = 0
     for i, atom in enumerate(atoms):
@@ -183,12 +188,15 @@ class HighlightOperation(FieldOperation):
         word_alias = params.get("word") or _DEFAULT_WORD
         sentence_alias = params.get("sentence") or _DEFAULT_SENTENCE
 
+        # Parse each sentence once: the same atoms give the backend its plain text
+        # and map the located span back onto the markup afterwards.
+        atoms = [parse_atoms(s.get(sentence_alias, "")) for s in sources]
         queries = [
             {
-                "text": plain_text(s.get(sentence_alias, "")),
+                "text": "".join(a.base for a in parts),
                 "word": plain_text(s.get(word_alias, "")),
             }
-            for s in sources
+            for s, parts in zip(sources, atoms, strict=True)
         ]
         resp = client.post("/v1/text/locate", {"queries": queries})
         results = resp.get("results", [])
@@ -197,6 +205,6 @@ class HighlightOperation(FieldOperation):
         for i, s in enumerate(sources):
             text = s.get(sentence_alias, "")
             segments = results[i].get("segments", []) if i < len(results) else []
-            new = highlight(text, segments)
+            new = highlight(text, segments, atoms[i])
             out.append(new if new is not None and new != text else None)
         return out

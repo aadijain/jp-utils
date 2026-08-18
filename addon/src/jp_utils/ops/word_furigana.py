@@ -48,7 +48,9 @@ class WordFuriganaOperation(FieldOperation):
     def compute(
         self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
     ) -> list[str | None]:
-        resp = client.post("/v1/text/furigana", {"texts": [s["word"] for s in sources]})
+        # post_pure: the reading and furigana ops send the identical request when both
+        # are in a pipeline, and this endpoint is a pure lookup.
+        resp = client.post_pure("/v1/text/furigana", {"texts": [s["word"] for s in sources]})
         results = resp.get("results", [])
         out: list[str | None] = [None] * len(sources)
         for i, result in enumerate(results[: len(sources)]):

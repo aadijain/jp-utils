@@ -30,6 +30,9 @@ class _FakeClient:
         self.response = response
         self.calls = []
 
+    def post_pure(self, path, body):
+        return self.post(path, body)
+
     def post(self, path, body):
         self.calls.append((path, body))
         return self.response
