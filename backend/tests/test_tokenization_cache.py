@@ -65,3 +65,22 @@ def test_open_creates_parent_dir(tmp_path: Path) -> None:
     cache = TokenizationCache.open(nested)
     assert nested.exists()
     cache.close()
+
+
+def test_batch_extraction_touches_the_cache_once(tokenizer, tmp_path) -> None:
+    """The batch form must not degrade into a query + commit per sentence."""
+    from app.text.words import content_words_batch
+
+    cache = TokenizationCache.open(tmp_path / "tok.db")
+    gets, puts = [], []
+    real_get, real_put = cache.get_many, cache.put_many
+    cache.get_many = lambda h: (gets.append(list(h)), real_get(h))[1]  # type: ignore[method-assign]
+    cache.put_many = lambda e: (puts.append(list(e)), real_put(e))[1]  # type: ignore[method-assign]
+
+    texts = ["猫が魚を食べた", "犬が走る", "猫が魚を食べた"]  # third repeats the first
+    out = content_words_batch(tokenizer, texts, cache=cache)
+
+    assert out[0] == out[2]  # repeated text resolves to the same words
+    assert len(gets) == 1 and len(gets[0]) == 3  # one read for the whole batch
+    assert len(puts) == 1 and len(puts[0]) == 2  # one write, deduped by content hash
+    cache.close()

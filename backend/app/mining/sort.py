@@ -13,7 +13,7 @@ from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.mining.ordering import ALGORITHMS
 from app.text.tokenizer import Tokenizer
-from app.text.words import content_words_with_readings
+from app.text.words import content_words_batch
 from app.vocab import VocabStore
 from shared.mining import MiningSentence, Nplus1SortResponse, SentenceScore
 from shared.text import SplitMode
@@ -77,10 +77,11 @@ def nplus1_sort(
     no default, and an unknown name is a `KeyError` (the router validates first, so
     it never reaches here).
     """
-    # Each card's content words; the extractor memoizes per sentence in `tok_cache`.
-    word_lists: list[list[VocabWord]] = [
-        content_words_with_readings(tokenizer, s.text, mode, tok_cache) for s in sentences
-    ]
+    # Each card's content words; the extractor memoizes per sentence in `tok_cache`,
+    # reading and writing it once for the whole batch.
+    word_lists: list[list[VocabWord]] = content_words_batch(
+        tokenizer, [s.text for s in sentences], mode, tok_cache
+    )
     lemma_lists = [[w.lemma for w in words] for words in word_lists]
     known = _known_lemmas(store, lemma_lists)
 
