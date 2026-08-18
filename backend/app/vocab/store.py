@@ -82,11 +82,20 @@ def _status_of(action: str) -> WordStatus:
         return WordStatus.UNKNOWN
 
 
+# The id of each (lemma, reading)'s latest event. One covering-index scan over
+# `idx_events_key`; the correlated-subquery form this replaced re-seeked the index
+# once per row of a full table scan.
+_CURRENT_IDS_SQL = "SELECT MAX(id) FROM events GROUP BY lemma, reading"
+
 # Latest-event row per (lemma, reading).
 _CURRENT_SQL = (
-    "SELECT lemma, reading, action, source, ts FROM events e1 "
-    "WHERE id = (SELECT MAX(id) FROM events e2 "
-    "WHERE e2.lemma = e1.lemma AND e2.reading = e1.reading)"
+    f"SELECT lemma, reading, action, source, ts FROM events WHERE id IN ({_CURRENT_IDS_SQL})"
+)
+
+# How many of those latest events leave the word recorded (see `_PRESENT`).
+_CURRENT_COUNT_SQL = (
+    f"SELECT COUNT(*) AS c FROM events WHERE id IN ({_CURRENT_IDS_SQL}) "
+    f"AND action IN ({', '.join('?' * len(_PRESENT))})"
 )
 
 
@@ -215,10 +224,22 @@ class VocabStore:
             if r["action"] in _PRESENT
         ]
 
+    def version(self) -> int:
+        """The store's current version (its highest event id; 0 when empty).
+
+        Split out of :meth:`status` because most callers - recording a batch,
+        stamping an n+1 sort - want only this, and computing the recorded-word
+        count means projecting every key.
+        """
+        return self._read("SELECT COALESCE(MAX(id), 0) AS v FROM events")[0]["v"]
+
     def status(self) -> VocabStatus:
-        events = self._read("SELECT COUNT(*) AS c FROM events")[0]["c"]
-        version = self._read("SELECT COALESCE(MAX(id), 0) AS v FROM events")[0]["v"]
-        return VocabStatus(count=len(self.current_keys()), events=events, version=version)
+        rows = self._read(
+            "SELECT (SELECT COUNT(*) FROM events) AS events, "
+            "(SELECT COALESCE(MAX(id), 0) FROM events) AS version"
+        )[0]
+        count = self._read(_CURRENT_COUNT_SQL, tuple(str(a) for a in sorted(_PRESENT)))[0]["c"]
+        return VocabStatus(count=count, events=rows["events"], version=rows["version"])
 
     def export(self, fmt: str) -> str:
         """Serialize the current recorded set as JSON or CSV (sorted by key)."""

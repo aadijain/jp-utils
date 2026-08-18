@@ -221,3 +221,31 @@ def test_export_json_and_csv(vocab_store: VocabStore) -> None:
     rows = list(csv.reader(io.StringIO(vocab_store.export("csv"))))
     assert rows[0] == ["lemma", "reading", "action", "source", "ts"]
     assert [r[0] for r in rows[1:]] == ["水", "火"]
+
+
+def test_version_matches_status_without_projecting_every_key(tmp_path) -> None:
+    """Recording a batch and stamping an n+1 sort want the version, not the count."""
+    store = VocabStore.open(tmp_path / "vocab.db")
+    store.record([RecordEntry(lemma="猫", reading="ねこ", action=VocabAction.SEEN, source="anki")])
+    store.record(
+        [RecordEntry(lemma="犬", reading="いぬ", action=VocabAction.LEARNT, source="anki")]
+    )
+
+    assert store.version() == store.status().version
+    store.close()
+
+
+def test_status_counts_only_recorded_words(tmp_path) -> None:
+    store = VocabStore.open(tmp_path / "vocab.db")
+    store.record([RecordEntry(lemma="猫", reading="ねこ", action=VocabAction.SEEN, source="anki")])
+    store.record([RecordEntry(lemma="犬", reading="いぬ", action=VocabAction.SEEN, source="anki")])
+    # A `removed` latest event takes the word back out of the recorded set.
+    store.record(
+        [RecordEntry(lemma="犬", reading="いぬ", action=VocabAction.REMOVED, source="manual")],
+        force=True,
+    )
+
+    status = store.status()
+    assert status.count == 1  # 猫 only
+    assert status.events == 3  # but every event is still on record
+    store.close()

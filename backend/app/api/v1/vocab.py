@@ -39,7 +39,7 @@ def record_words(
     ignore/blacklist. `recorded` is the number of rows actually written.
     """
     recorded = store.record(req.entries, force=req.force)
-    return RecordResponse(recorded=recorded, version=store.status().version)
+    return RecordResponse(recorded=recorded, version=store.version())
 
 
 @router.post("/filter-by-status")

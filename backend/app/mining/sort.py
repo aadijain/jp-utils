@@ -98,4 +98,4 @@ def nplus1_sort(
         )
         for i in range(len(sentences))
     ]
-    return Nplus1SortResponse(results=results, version=store.status().version)
+    return Nplus1SortResponse(results=results, version=store.version())
