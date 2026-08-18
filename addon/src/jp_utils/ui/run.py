@@ -82,6 +82,22 @@ class _RunGroup:
     translate_notes: list[NoteFields] = field(default_factory=list)
 
     @property
+    def alias_ops(self) -> dict[str, str]:
+        """Map an output alias -> the field op key that writes it, for THIS pipeline.
+
+        A :class:`~jp_utils.ops.base.NotePlan` carries aliases, not the op that
+        produced them, so the edit log resolves the responsible op through this.
+        It is per-group on purpose: two pipelines can target the same note type in
+        different decks and run different ops over the same alias, so a note-type
+        keyed index would attribute one pipeline's writes to the other's op.
+        """
+        return {
+            alias: configured.operation.key
+            for configured in (*self.field_ops, *self.deck_field_ops)
+            for alias in configured.operation.io_spec(configured.params).outputs
+        }
+
+    @property
     def has_ops(self) -> bool:
         return bool(
             self.field_ops
@@ -97,13 +113,12 @@ class _RunGroup:
 class _EditLog:
     """Collects one run's edit-log lines, written in a single append at the end.
 
-    Holds the ``(note type, alias) -> op key`` index the field path needs (see
-    :func:`_alias_ops`). Buffering keeps a sweep to one file write; the actual
-    append is best-effort (see :mod:`jp_utils.editlog`).
+    Buffering keeps a sweep to one file write; the actual append is best-effort
+    (see :mod:`jp_utils.editlog`). The alias -> op index the field path needs is
+    per-pipeline and lives on the group (:attr:`_RunGroup.alias_ops`).
     """
 
-    def __init__(self, alias_ops: dict[tuple[str, str], str]):
-        self.alias_ops = alias_ops
+    def __init__(self) -> None:
         self.entries: list[dict] = []
 
     def note(self, mw, action, note, note_type, note_id, fields, ops, deck=None) -> None:
@@ -143,20 +158,6 @@ def _note_card_id(note) -> int | None:
     """
     cards = note.cards()
     return cards[0].id if cards else None
-
-
-def _alias_ops(groups) -> dict[tuple[str, str], str]:
-    """Map ``(note type, output alias)`` -> the field op key that writes it.
-
-    A :class:`~jp_utils.ops.base.NotePlan` carries aliases, not the op that
-    produced them, so the edit log resolves the responsible op through this.
-    """
-    index: dict[tuple[str, str], str] = {}
-    for group in groups:
-        for configured in (*group.field_ops, *group.deck_field_ops):
-            for alias in configured.operation.io_spec(configured.params).outputs:
-                index[(group.note_type, alias)] = configured.operation.key
-    return index
 
 
 def _deck_source_notes(mw, group: _RunGroup, config: AddonConfig, only: str = "") -> list:
@@ -209,7 +210,7 @@ def run_pipeline(
     # Group notes by the pipeline that applies to their (deck, note type). Each
     # group carries the resolved operations + the role-keyed note snapshots.
     groups: dict[int, _RunGroup] = {}
-    note_type_of: dict[int, str] = {}
+    group_of: dict[int, _RunGroup] = {}
     skipped_no_pipeline = skipped_no_mapping = 0
     for nid in note_ids:
         note = mw.col.get_note(nid)
@@ -247,7 +248,7 @@ def run_pipeline(
                 translate_ops=[c for c in resolved if isinstance(c.operation, TranslateOperation)],
             )
         groups[key].notes.append(to_note_fields(int(nid), dict(note.items()), mapping))
-        note_type_of[int(nid)] = note_type
+        group_of[int(nid)] = groups[key]
 
     # Generate and status ops run over the deck's own notes, not the passed subset
     # (like a sort op re-queries its deck), so gather those here. Generation wants the
@@ -262,7 +263,7 @@ def run_pipeline(
             # step can resolve a plan for a note that wasn't in the passed subset.
             group.deck_notes = _deck_source_notes(mw, group, config)
             for view in group.deck_notes:
-                note_type_of[view.note_id] = group.note_type
+                group_of.setdefault(view.note_id, group)
         if group.gen_ops:
             group.reviewed = _deck_source_notes(mw, group, config, "-is:new")
         if group.status_ops:
@@ -356,10 +357,10 @@ def run_pipeline(
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             _report_failure(parent, str(exc), silent)
             return
-        log = _EditLog(_alias_ops(work))
-        n_notes, n_fields = _apply_plans(mw, plans, note_type_of, config, log)
+        log = _EditLog()
+        n_notes, n_fields = _apply_plans(mw, plans, group_of, config, log)
         try:
-            m_notes, m_fields = _apply_media(mw, media_plans, note_type_of, config, log)
+            m_notes, m_fields = _apply_media(mw, media_plans, group_of, config, log)
             n_cards = _apply_sorts(mw, work, config, log)
             gen = _apply_generation(mw, gen_results, config, log)
             n_translated = _apply_translations(mw, translation_plans, config, log)
@@ -437,7 +438,7 @@ def _report_failure(parent, message: str, silent: bool) -> None:
 
 
 def _apply_plans(
-    mw, plans, note_type_of: dict[int, str], config: AddonConfig, log: _EditLog
+    mw, plans, group_of: dict[int, "_RunGroup"], config: AddonConfig, log: _EditLog
 ) -> tuple[int, int]:
     """Write the planned field updates back onto the notes (UI thread).
 
@@ -457,7 +458,8 @@ def _apply_plans(
     changed_fields = 0
     for note_id, note_plans in by_note.items():
         note = mw.col.get_note(NoteId(note_id))
-        note_type = note_type_of[note_id]
+        group = group_of[note_id]
+        note_type = group.note_type
         mapping = config.note_types[note_type]
         fields = dict(note.items())
         names: list[str] = []
@@ -478,7 +480,7 @@ def _apply_plans(
             note_type,
             note_id,
             names,
-            [log.alias_ops.get((note_type, u.alias), "") for u in updates],
+            [group.alias_ops.get(u.alias, "") for u in updates],
         )
 
     if updated:
@@ -487,7 +489,7 @@ def _apply_plans(
 
 
 def _apply_media(
-    mw, media_plans, note_type_of: dict[int, str], config: AddonConfig, log: _EditLog
+    mw, media_plans, group_of: dict[int, "_RunGroup"], config: AddonConfig, log: _EditLog
 ) -> tuple[int, int]:
     """Attach each media plan's bytes to the collection and write its field (UI thread).
 
@@ -506,7 +508,7 @@ def _apply_media(
     changed_fields = 0
     for note_id, plans in by_note.items():
         note = mw.col.get_note(NoteId(note_id))
-        note_type = note_type_of[note_id]
+        note_type = group_of[note_id].note_type
         mapping = config.note_types[note_type]
         names, ops = [], []
         for plan in plans:
