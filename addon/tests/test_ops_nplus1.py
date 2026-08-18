@@ -113,3 +113,16 @@ def test_stable_sequence_falls_back_to_full_renumber_when_gap_exhausted():
     out = stable_sequence([0, 2, 3, 1], [100, 101, None, None])
     assert out[0] < out[2] < out[3] < out[1]
     assert len(set(out.values())) == 4  # all distinct
+
+
+def test_nplus1_is_whole_deck_so_a_selection_run_still_orders_globally():
+    # The order is a global computation: if the runner fed this op only the notes
+    # it was handed (e.g. a Browser selection), it would write positions WITHIN
+    # that selection. The flag is what routes it the deck's own notes instead.
+    assert Nplus1SequenceOperation.whole_deck is True
+
+
+def test_ordinary_field_ops_are_not_whole_deck():
+    from jp_utils.ops.word_reading import WordReadingOperation
+
+    assert WordReadingOperation.whole_deck is False

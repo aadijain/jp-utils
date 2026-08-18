@@ -173,6 +173,12 @@ class Operation(ABC):
     # Shown in the I/O column when the op writes NO output field (sort/generate/
     # status ops set a verb here, e.g. "(reorder cards)").
     io_verb: str = ""
+    # True when the op's result depends on the WHOLE (deck, note type), not just the
+    # notes it was handed - e.g. an ordering over every sentence in the deck. The
+    # wiring layer then feeds it the deck's own notes instead of the passed subset,
+    # the way sort/generate/status ops already re-query their deck, so running from
+    # a Browser selection produces the same global result as the start sweep.
+    whole_deck: bool = False
 
     def io_spec(self, params: dict | None = None) -> IOSpec:
         """This op's alias contract for ``params`` (default: its static attributes).
