@@ -219,3 +219,20 @@ def test_open_returns_none_on_unreadable_cache_file(tmp_path: Path) -> None:
     garbage = tmp_path / "garbage.db"
     garbage.write_bytes(b"not a sqlite database")
     assert DictCache.open(garbage) is None
+
+
+def test_lookups_are_memoized(built_cache: Path) -> None:
+    """A built cache is immutable, and the same words recur constantly per deck."""
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+
+    first = cache.lookup_frequency("水", "みず")
+    assert cache.lookup_frequency("水", "みず") == first
+    assert cache._lookup_frequency.cache_info().hits == 1
+
+    cache.lookup_furigana("水", "みず")
+    cache.lookup_furigana("水", "みず")
+    assert cache._lookup_furigana.cache_info().hits == 1
+
+    cache.close()
+    assert cache._lookup_frequency.cache_info().currsize == 0  # cleared on close
