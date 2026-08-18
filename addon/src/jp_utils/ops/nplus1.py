@@ -13,8 +13,11 @@ in the backend, so this side stays a choice between named behaviours.
 
 Unlike the other field ops this is a **global** computation (every card's number
 depends on the whole batch), so it always recomputes (no ``only_if_empty``) and is
-idempotent only by recompute-vs-compare. HTML/ruby is stripped before sending so
-markup never reaches the tokenizer (the backend never sees it).
+idempotent only by recompute-vs-compare. It is also ``whole_deck``: the wiring runs
+it over every note of the ``(deck, note type)``, never just the notes it was handed,
+so a Browser-selection run and the start sweep produce the same ordering. HTML/ruby
+is stripped before sending so markup never reaches the tokenizer (the backend never
+sees it).
 """
 
 import html
@@ -62,6 +65,10 @@ class Nplus1SequenceOperation(FieldOperation):
     input_aliases = ("sentence",)
     output_alias = "rank"
     # No only_if_empty: the order is global and must always recompute.
+    # Every card's number depends on the whole batch, so the wiring feeds this op
+    # the deck's own notes rather than the passed subset - otherwise running it
+    # over a Browser selection would write positions WITHIN that selection.
+    whole_deck = True
     params_spec = (
         ParamSpec(
             "algorithm",

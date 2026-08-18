@@ -67,12 +67,14 @@ class _RunGroup:
     deck: str
     note_type: str
     field_ops: list[ConfiguredOp] = field(default_factory=list)
+    deck_field_ops: list[ConfiguredOp] = field(default_factory=list)
     media_ops: list[ConfiguredOp] = field(default_factory=list)
     sort_ops: list[ConfiguredOp] = field(default_factory=list)
     gen_ops: list[ConfiguredOp] = field(default_factory=list)
     status_ops: list[ConfiguredOp] = field(default_factory=list)
     translate_ops: list[ConfiguredOp] = field(default_factory=list)
     notes: list[NoteFields] = field(default_factory=list)
+    deck_notes: list[NoteFields] = field(default_factory=list)
     reviewed: list[NoteFields] = field(default_factory=list)
     status_seen: list[NoteFields] = field(default_factory=list)
     status_learnt: list[NoteFields] = field(default_factory=list)
@@ -83,6 +85,7 @@ class _RunGroup:
     def has_ops(self) -> bool:
         return bool(
             self.field_ops
+            or self.deck_field_ops
             or self.media_ops
             or self.sort_ops
             or self.gen_ops
@@ -150,7 +153,7 @@ def _alias_ops(groups) -> dict[tuple[str, str], str]:
     """
     index: dict[tuple[str, str], str] = {}
     for group in groups:
-        for configured in group.field_ops:
+        for configured in (*group.field_ops, *group.deck_field_ops):
             for alias in configured.operation.io_spec(configured.params).outputs:
                 index[(group.note_type, alias)] = configured.operation.key
     return index
@@ -225,7 +228,18 @@ def run_pipeline(
             groups[key] = _RunGroup(
                 deck=pipeline.deck,
                 note_type=note_type,
-                field_ops=[c for c in resolved if isinstance(c.operation, FieldOperation)],
+                field_ops=[
+                    c
+                    for c in resolved
+                    if isinstance(c.operation, FieldOperation)
+                    and not getattr(c.operation, "whole_deck", False)
+                ],
+                deck_field_ops=[
+                    c
+                    for c in resolved
+                    if isinstance(c.operation, FieldOperation)
+                    and getattr(c.operation, "whole_deck", False)
+                ],
                 media_ops=[c for c in resolved if isinstance(c.operation, MediaOperation)],
                 sort_ops=[c for c in resolved if isinstance(c.operation, SortOperation)],
                 gen_ops=[c for c in resolved if isinstance(c.operation, GenerateOperation)],
@@ -242,6 +256,13 @@ def run_pipeline(
     # know this"). Cards carrying a priority tag are pulled out separately and
     # excluded from both auto buckets, so a tagged word's forced action wins.
     for group in groups.values():
+        if group.deck_field_ops:
+            # A whole-deck field op (the n+1 sequencer) is a global computation, so
+            # it runs over the deck's own notes; register their types so the apply
+            # step can resolve a plan for a note that wasn't in the passed subset.
+            group.deck_notes = _deck_source_notes(mw, group, config)
+            for view in group.deck_notes:
+                note_type_of[view.note_id] = group.note_type
         if group.gen_ops:
             group.reviewed = _deck_source_notes(mw, group, config, "-is:new")
         if group.status_ops:
@@ -291,6 +312,8 @@ def run_pipeline(
         for group in work:
             if group.field_ops:
                 plans.extend(plan_operations(client, group.field_ops, group.notes))
+            if group.deck_field_ops and group.deck_notes:
+                plans.extend(plan_operations(client, group.deck_field_ops, group.deck_notes))
             if group.media_ops:
                 media_plans.extend(plan_media(client, group.media_ops, group.notes))
             if group.gen_ops:
@@ -421,15 +444,27 @@ def _apply_plans(
     Returns ``(notes_updated, fields_changed)``; messaging is left to the caller
     so field writes and sort reordering can be reported together. Each written
     note also gets one ``field`` line in the edit log.
+
+    Plans are merged per note first: the subset field ops and the whole-deck ones
+    are planned in separate passes, so one note can arrive with a plan from each
+    and must still be fetched, written and logged exactly once.
     """
+    by_note: dict[int, list] = {}
+    for plan in plans:
+        by_note.setdefault(plan.note_id, []).append(plan)
+
     updated = []
     changed_fields = 0
-    for plan in plans:
-        note = mw.col.get_note(NoteId(plan.note_id))
-        note_type = note_type_of[plan.note_id]
+    for note_id, note_plans in by_note.items():
+        note = mw.col.get_note(NoteId(note_id))
+        note_type = note_type_of[note_id]
         mapping = config.note_types[note_type]
         fields = dict(note.items())
-        names = apply_plan(plan, fields, mapping)
+        names: list[str] = []
+        updates = []
+        for plan in note_plans:
+            names.extend(apply_plan(plan, fields, mapping))
+            updates.extend(plan.updates)
         if not names:
             continue
         for name in names:
@@ -441,9 +476,9 @@ def _apply_plans(
             "field",
             note,
             note_type,
-            plan.note_id,
+            note_id,
             names,
-            [log.alias_ops.get((note_type, u.alias), "") for u in plan.updates],
+            [log.alias_ops.get((note_type, u.alias), "") for u in updates],
         )
 
     if updated:
