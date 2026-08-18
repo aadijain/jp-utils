@@ -2,6 +2,7 @@
 
 import base64
 
+from jp_utils.client import DEFAULT_TIMEOUT
 from jp_utils.ops.base import MediaResult
 from jp_utils.ops.word_audio import WordAudioOperation
 
@@ -11,8 +12,8 @@ class _FakeClient:
         self.response = response
         self.calls = []
 
-    def post(self, path, body):
-        self.calls.append((path, body))
+    def post(self, path, body, timeout=None):
+        self.calls.append((path, body, timeout))
         return self.response
 
 
@@ -31,12 +32,12 @@ def test_builds_queries_with_reading_and_decodes_bytes():
     )
     assert out[0] == MediaResult(data=audio, filename="jp-utils-水-みず.mp3")
     assert out[1] is None
-    assert client.calls == [
-        (
-            "/v1/text/audio",
-            {"queries": [{"term": "水", "reading": "みず"}, {"term": "人", "reading": "ひと"}]},
-        )
-    ]
+    path, body, _timeout = client.calls[0]
+    assert len(client.calls) == 1  # one batched round trip, never one per word
+    assert path == "/v1/text/audio"
+    assert body == {
+        "queries": [{"term": "水", "reading": "みず"}, {"term": "人", "reading": "ひと"}]
+    }
 
 
 def test_missing_results_leave_notes_unchanged():
@@ -53,3 +54,20 @@ def test_both_word_and_reading_are_required():
     assert op.applicable({"word": "水", "word-reading": "みず"})
     assert not op.applicable({"word": "水", "word-reading": ""})  # reading required
     assert not op.applicable({"word": "", "word-reading": "みず"})
+
+
+def test_timeout_budget_grows_with_the_batch():
+    """The backend makes two serial network hops PER WORD, so a flat client
+    timeout would fail a whole sweep once the deck got large enough."""
+    client = _FakeClient({"results": []})
+    WordAudioOperation().fetch(client, [{"word": "水", "word-reading": "みず"}])
+    small = client.calls[0][2]
+
+    client = _FakeClient({"results": []})
+    WordAudioOperation().fetch(
+        client, [{"word": f"w{i}", "word-reading": "よみ"} for i in range(200)]
+    )
+    large = client.calls[0][2]
+
+    assert small == DEFAULT_TIMEOUT  # a lone word never dips below the default
+    assert large > small
