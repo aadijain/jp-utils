@@ -20,7 +20,7 @@ from aqt.utils import showInfo, showWarning, tooltip
 
 from .. import editlog
 from ..client import BackendClient, BackendError
-from ..config import AddonConfig, find_pipeline, load
+from ..config import AddonConfig, Pipeline, load
 from ..generation import context_aliases, word_key
 from ..ops import (
     ALL_OPERATIONS,
@@ -61,7 +61,7 @@ class _RunGroup:
 
     ``notes`` are the passed-in notes matched to this pipeline; ``reviewed`` and the
     ``status_*`` buckets are gathered separately from the pipeline's own deck (see
-    :func:`_deck_source_notes`).
+    :func:`_deck_note_views`).
     """
 
     deck: str
@@ -160,24 +160,63 @@ def _note_card_id(note) -> int | None:
     return cards[0].id if cards else None
 
 
-def _deck_source_notes(mw, group: _RunGroup, config: AddonConfig, only: str = "") -> list:
-    """Snapshot the group's (deck, note type) notes, optionally filtered by card state.
+def _deck_note_views(mw, group: _RunGroup, config: AddonConfig) -> dict[int, NoteFields]:
+    """Snapshot every note of the group's (deck, note type), fetched exactly once.
 
-    ``only`` narrows the search (``"-is:new"`` reviewed, ``"is:new"`` new, ``""`` all).
-    Generation and status-sync read the whole deck this way - not just the passed
-    subset - so the first start-sweep backfills history. Returns alias-keyed views
-    (empty if the note type is unmapped).
+    Whole-deck ops (generate, status-sync, translate, the n+1 sequencer) each read
+    the deck rather than the passed subset, and status-sync alone wants four
+    different slices of it. Fetching per slice meant re-reading the whole deck up to
+    six times per run; instead the deck is read once here and the slices are taken
+    by id (see :func:`_deck_slice`), since resolving ids is cheap and fetching notes
+    is not.
+
+    Keyed by note id, in ``find_notes`` order - the n+1 ordering uses mined order as
+    its tie-break, so the deck's order has to survive. Empty if the note type is
+    unmapped.
     """
     mapping = config.note_types.get(group.note_type)
     if not mapping:
-        return []
+        return {}
+    return {
+        int(nid): to_note_fields(int(nid), dict(mw.col.get_note(nid).items()), mapping)
+        for nid in mw.col.find_notes(f'deck:"{group.deck}" note:"{group.note_type}"')
+    }
+
+
+def _deck_slice(mw, group: _RunGroup, views: dict[int, NoteFields], only: str = "") -> list:
+    """The already-fetched views for the deck notes matching ``only``, in deck order.
+
+    ``only`` narrows the search (``"-is:new"`` reviewed, ``"is:new"`` new, ``""``
+    all). Resolves ids only - the note contents come from ``views``.
+    """
     query = f'deck:"{group.deck}" note:"{group.note_type}"'
     if only:
         query += f" {only}"
-    return [
-        to_note_fields(int(nid), dict(mw.col.get_note(nid).items()), mapping)
-        for nid in mw.col.find_notes(query)
-    ]
+    return [views[nid] for nid in map(int, mw.col.find_notes(query)) if nid in views]
+
+
+def _match_pipelines(mw, note_ids, config: AddonConfig) -> dict[int, Pipeline]:
+    """Map each of ``note_ids`` to the enabled pipeline targeting its (deck, note type).
+
+    Resolved by intersecting the passed ids with each pipeline's own search, rather
+    than asking every note which deck it is in: ``find_pipeline`` needs a note's deck
+    name, and getting that per note costs a card query EACH (``note.cards()``) on top
+    of loading the note. A start sweep over a few thousand notes paid that twice per
+    note on the UI thread before any work began.
+
+    Pipelines are consulted in config order and the first match wins, matching
+    :func:`~jp_utils.config.find_pipeline`'s contract.
+    """
+    wanted = {int(nid) for nid in note_ids}
+    matched: dict[int, Pipeline] = {}
+    for pipeline in config.pipelines:
+        if not (pipeline.enabled and pipeline.deck and pipeline.note_type):
+            continue
+        query = f'deck:"{pipeline.deck}" note:"{pipeline.note_type}"'
+        for nid in map(int, mw.col.find_notes(query)):
+            if nid in wanted:
+                matched.setdefault(nid, pipeline)
+    return matched
 
 
 def _status_tag_actions(status_ops: list) -> dict[str, str]:
@@ -212,17 +251,18 @@ def run_pipeline(
     groups: dict[int, _RunGroup] = {}
     group_of: dict[int, _RunGroup] = {}
     skipped_no_pipeline = skipped_no_mapping = 0
+    pipeline_of = _match_pipelines(mw, note_ids, config)
     for nid in note_ids:
-        note = mw.col.get_note(nid)
-        note_type = note.note_type()["name"]
-        pipeline = find_pipeline(config.pipelines, _note_deck(mw, note), note_type)
+        pipeline = pipeline_of.get(int(nid))
         if pipeline is None:
             skipped_no_pipeline += 1
             continue
+        note_type = pipeline.note_type
         mapping = config.note_types.get(note_type)
         if not mapping:
             skipped_no_mapping += 1
             continue
+        note = mw.col.get_note(nid)
         key = id(pipeline)
         if key not in groups:
             resolved = resolve_pipeline_steps(pipeline.steps, ALL_OPERATIONS)
@@ -257,27 +297,31 @@ def run_pipeline(
     # know this"). Cards carrying a priority tag are pulled out separately and
     # excluded from both auto buckets, so a tagged word's forced action wins.
     for group in groups.values():
+        if not (group.deck_field_ops or group.gen_ops or group.status_ops or group.translate_ops):
+            continue
+        # One read of the deck; every slice below is resolved by id against it.
+        views = _deck_note_views(mw, group, config)
+        if not views:
+            continue
         if group.deck_field_ops:
             # A whole-deck field op (the n+1 sequencer) is a global computation, so
-            # it runs over the deck's own notes; register their types so the apply
+            # it runs over the deck's own notes; register their group so the apply
             # step can resolve a plan for a note that wasn't in the passed subset.
-            group.deck_notes = _deck_source_notes(mw, group, config)
+            group.deck_notes = list(views.values())
             for view in group.deck_notes:
                 group_of.setdefault(view.note_id, group)
         if group.gen_ops:
-            group.reviewed = _deck_source_notes(mw, group, config, "-is:new")
+            group.reviewed = _deck_slice(mw, group, views, "-is:new")
         if group.status_ops:
             tag_actions = _status_tag_actions(group.status_ops)
             untagged = "".join(f" -tag:{tag}" for tag in tag_actions)
-            group.status_seen = _deck_source_notes(
-                mw, group, config, f"is:new -is:suspended{untagged}"
-            )
-            group.status_learnt = _deck_source_notes(
-                mw, group, config, f"(-is:new OR is:suspended){untagged}"
+            group.status_seen = _deck_slice(mw, group, views, f"is:new -is:suspended{untagged}")
+            group.status_learnt = _deck_slice(
+                mw, group, views, f"(-is:new OR is:suspended){untagged}"
             )
             tagged: dict[str, list] = {}
             for tag, action in tag_actions.items():
-                notes = _deck_source_notes(mw, group, config, f"tag:{tag}")
+                notes = _deck_slice(mw, group, views, f"tag:{tag}")
                 if notes:
                     tagged.setdefault(action, []).extend(notes)
             group.status_tagged = tagged
@@ -289,7 +333,7 @@ def run_pipeline(
             )
             if tags:
                 clause = " OR ".join(f"tag:{tag}" for tag in tags)
-                group.translate_notes = _deck_source_notes(mw, group, config, f"({clause})")
+                group.translate_notes = _deck_slice(mw, group, views, f"({clause})")
 
     work = [g for g in groups.values() if g.has_ops and g.notes]
     if not work:
@@ -573,7 +617,13 @@ def _reorder_new_cards(mw, deck: str, note_type: str, sort_ops: list, mapping: d
     if not cids:
         return 0
     cards = [mw.col.get_card(cid) for cid in cids]
-    sources = [to_note_fields(c.nid, dict(c.note().items()), mapping).fields for c in cards]
+    # Sibling cards share a note, and `card.note()` re-reads it every time, so the
+    # note is loaded once per note id rather than once per card.
+    views: dict[int, dict] = {}
+    for card in cards:
+        if card.nid not in views:
+            views[card.nid] = to_note_fields(card.nid, dict(card.note().items()), mapping).fields
+    sources = [views[c.nid] for c in cards]
 
     order = list(range(len(cards)))
     for configured in reversed(sort_ops):
