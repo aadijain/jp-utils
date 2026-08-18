@@ -10,6 +10,7 @@ text or vocab modules.
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
+from app.api.v1.limits import check_batch
 from app.errors import APIError
 from app.translations import TranslationQueue
 from shared.translations import (
@@ -40,6 +41,7 @@ def lookup(
     by the worker. Re-querying is idempotent - keys are content hashes of the
     normalized sentence.
     """
+    check_batch(req.queries, "queries")
     return queue.lookup(req.queries)
 
 

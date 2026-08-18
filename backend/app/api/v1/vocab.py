@@ -7,6 +7,7 @@ not import the text module (the boundary that keeps vocab separable).
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
+from app.api.v1.limits import check_batch
 from app.errors import APIError
 from app.vocab import VocabStore
 from shared.vocab import (
@@ -38,6 +39,7 @@ def record_words(
     `seen`/`learnt` are upgrade-only and never downgrade or clobber a manual
     ignore/blacklist. `recorded` is the number of rows actually written.
     """
+    check_batch(req.entries, "entries")
     recorded = store.record(req.entries, force=req.force)
     return RecordResponse(recorded=recorded, version=store.version())
 
@@ -53,6 +55,7 @@ def filter_by_status(
     {unknown, seen} with `match_lemma_only` so a reading mismatch can't surface a
     known word as unknown.
     """
+    check_batch(req.words, "words")
     return store.filter_by_status(req.words, req.statuses, req.match_lemma_only)
 
 

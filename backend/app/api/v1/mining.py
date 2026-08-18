@@ -17,6 +17,7 @@ not have, since silently falling back would reorder a deck the wrong way.
 from fastapi import APIRouter, Depends
 
 from app.api.v1.deps import get_dict_cache, get_tokenization_cache, get_tokenizer
+from app.api.v1.limits import check_batch
 from app.api.v1.vocab import get_vocab_store
 from app.cache import TokenizationCache
 from app.dicts import DictCache
@@ -38,6 +39,7 @@ def nplus1sort(
     tok_cache: TokenizationCache | None = Depends(get_tokenization_cache),
 ) -> Nplus1SortResponse:
     """Order the new-card queue n+1 (fewest new words first). Aligned with `req.sentences`."""
+    check_batch(req.sentences, "sentences")
     if req.algorithm not in ALGORITHMS:
         raise APIError(
             400,

@@ -15,6 +15,7 @@ from app.api.v1.deps import (
     get_tokenizer,
     require_dict_cache,
 )
+from app.api.v1.limits import check_batch
 from app.cache import TokenizationCache
 from app.dicts import DictCache
 from app.errors import APIError
@@ -65,6 +66,7 @@ def tokenize(
     tokenizer: Tokenizer = Depends(get_tokenizer),
 ) -> TokenizeResponse:
     """Tokenize a batch of texts. Results are aligned with `req.texts`."""
+    check_batch(req.texts, "texts")
     results = [
         TokenizedText(text=text, tokens=tokenizer.tokenize(text, req.mode)) for text in req.texts
     ]
@@ -77,6 +79,7 @@ def space(
     tokenizer: Tokenizer = Depends(get_tokenizer),
 ) -> SpacingResponse:
     """Insert `separator` at word boundaries. Results aligned with `req.texts`."""
+    check_batch(req.texts, "texts")
     results = [space_text(tokenizer, text, req.separator, req.mode) for text in req.texts]
     return SpacingResponse(results=results)
 
@@ -88,6 +91,7 @@ def furigana(
     cache: DictCache | None = Depends(get_dict_cache),
 ) -> FuriganaResponse:
     """Annotate a batch of texts with furigana. Results aligned with `req.texts`."""
+    check_batch(req.texts, "texts")
     results = [
         FuriganaText(text=text, segments=annotate(tokenizer, text, cache, req.mode))
         for text in req.texts
@@ -98,6 +102,7 @@ def furigana(
 @router.post("/convert")
 def convert_text(req: ConvertRequest) -> ConvertResponse:
     """Apply a kana/width conversion to a batch of texts (pure; no models needed)."""
+    check_batch(req.texts, "texts")
     return ConvertResponse(results=[convert(text, req.conversion) for text in req.texts])
 
 
@@ -107,6 +112,7 @@ def meaning(
     cache: DictCache = Depends(require_dict_cache),
 ) -> MeaningResponse:
     """Look up dictionary meanings for a batch of words. Aligned with `req.queries`."""
+    check_batch(req.queries, "queries")
     return MeaningResponse(results=[lookup_meaning(cache, q) for q in req.queries])
 
 
@@ -116,6 +122,7 @@ def frequency(
     cache: DictCache = Depends(require_dict_cache),
 ) -> FrequencyResponse:
     """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
+    check_batch(req.queries, "queries")
     return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
 
 
@@ -125,6 +132,7 @@ def pitch(
     cache: DictCache = Depends(require_dict_cache),
 ) -> PitchResponse:
     """Look up pitch-accent positions + categories for a batch. Aligned with `req.queries`."""
+    check_batch(req.queries, "queries")
     return PitchResponse(results=[lookup_pitch(cache, q) for q in req.queries])
 
 
@@ -141,6 +149,7 @@ def content_words(
     consulted transparently inside the extractor (mode C only), once for the whole
     batch rather than once per text.
     """
+    check_batch(req.texts, "texts")
     results = content_words_batch(tokenizer, req.texts, req.mode, cache)
     return ContentWordsResponse(results=results)
 
@@ -151,6 +160,7 @@ def normalize_text(
     tokenizer: Tokenizer = Depends(get_tokenizer),
 ) -> NormalizeResponse:
     """Deinflect each surface to its canonical lemma + reading. Aligned with `req.surfaces`."""
+    check_batch(req.surfaces, "surfaces")
     results = [normalize(tokenizer, surface, req.mode) for surface in req.surfaces]
     return NormalizeResponse(results=results)
 
@@ -166,6 +176,7 @@ def locate_word(
     the sentence into segments with the first match flagged. The caller is expected
     to pass plain text (markup stripped) and to reattach any markup itself.
     """
+    check_batch(req.queries, "queries")
     results = [locate(tokenizer, q.text, q.word, req.mode) for q in req.queries]
     return LocateResponse(results=results)
 
@@ -181,6 +192,7 @@ def audio(
     when no source matched (not an error). A transport failure (server down) maps to
     a 502 so the whole batch fails loudly rather than silently dropping audio.
     """
+    check_batch(req.queries, "queries")
     try:
         results = [proxy.lookup(q, req.sources) for q in req.queries]
     except httpx.HTTPError as exc:
