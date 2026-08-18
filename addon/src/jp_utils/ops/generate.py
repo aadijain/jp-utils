@@ -88,14 +88,24 @@ class GenerateVocabOperation(GenerateOperation):
         # Align to sources; each entry is a list of {"lemma", "reading"} dicts.
         word_lists = [results[i] if i < len(results) else [] for i in range(len(sources))]
 
-        candidates = [w for word_list in word_lists for w in word_list]
+        # One entry per distinct lemma: the same word turns up across many mined
+        # sentences, and the filter answers by lemma anyway - so sending every
+        # occurrence would inflate the request several-fold over a full sweep for
+        # an identical answer.
+        candidates = {
+            w["lemma"]: w for word_list in word_lists for w in word_list if w.get("lemma")
+        }
         if not candidates:
             return [[] for _ in sources]
 
         # One batched status filter over every candidate; keep new words only.
         filtered = client.post(
             "/v1/vocab/filter-by-status",
-            {"words": candidates, "statuses": ["unknown", "seen"], "match_lemma_only": True},
+            {
+                "words": list(candidates.values()),
+                "statuses": ["unknown", "seen"],
+                "match_lemma_only": True,
+            },
         )
         kept_lemmas = {w["lemma"] for w in filtered.get("matched", [])}
         return [[w for w in word_list if w["lemma"] in kept_lemmas] for word_list in word_lists]

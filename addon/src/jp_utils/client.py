@@ -39,6 +39,7 @@ class BackendClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self._pure_cache: dict[tuple[str, str], dict] = {}
 
     # ── Calls ────────────────────────────────────────────────────────────────
     def ping(self) -> dict:
@@ -51,6 +52,23 @@ class BackendClient:
     def health(self) -> dict:
         """Public health probe (``GET /health``); reports dict/tokenizer state."""
         return self.request("GET", "/health", auth=False)
+
+    def post_pure(self, path: str, body: dict) -> dict:
+        """POST to a **pure** endpoint, reusing the answer if already asked this run.
+
+        Only for endpoints that are side-effect-free lookups over the reference
+        dictionaries - never for anything that writes (``/v1/vocab/words``) or
+        enqueues (``/v1/translations/lookup``), where a second identical call is
+        meaningful. Two ops in one pipeline can otherwise send byte-identical
+        requests (the reading and furigana ops both furigana the same words).
+
+        The memo lives on the client, and a client is built per run, so it never
+        outlives the run that populated it.
+        """
+        key = (path, json.dumps(body, sort_keys=True, ensure_ascii=False))
+        if key not in self._pure_cache:
+            self._pure_cache[key] = self.post(path, body)
+        return self._pure_cache[key]
 
     def post(self, path: str, body: dict, timeout: float | None = None) -> dict:
         """POST a JSON body to a backend path and return the parsed response.

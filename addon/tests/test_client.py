@@ -95,3 +95,18 @@ def test_unreachable_backend_raises_backend_error():
 def test_trailing_slash_is_normalized(server):
     client = BackendClient(server + "/", token=TOKEN)
     assert client.ping() == {"status": "ok"}
+
+
+def test_post_pure_reuses_an_identical_request_within_a_run():
+    """Two ops in one pipeline can send byte-identical furigana requests."""
+    client = BackendClient("http://example.invalid")
+    sent = []
+    client.post = lambda path, body: (sent.append((path, body)), {"results": [1]})[1]  # type: ignore[method-assign]
+
+    first = client.post_pure("/v1/text/furigana", {"texts": ["水"]})
+    second = client.post_pure("/v1/text/furigana", {"texts": ["水"]})
+    third = client.post_pure("/v1/text/furigana", {"texts": ["人"]})
+
+    assert first == second == {"results": [1]}
+    assert len(sent) == 2  # the repeat was served from the memo, the new body was not
+    assert third == {"results": [1]}
