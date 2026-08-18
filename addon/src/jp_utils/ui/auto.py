@@ -19,32 +19,20 @@ pipeline selection is the pure :func:`jp_utils.config.pipelines_for_trigger`.
 from aqt import mw
 from aqt.gui_hooks import profile_did_open
 
-from ..config import AUTO_TRIGGER_START, Pipeline, load, pipelines_for_trigger
-from .run import run_pipeline
-
-
-def _note_ids_for(pipeline: Pipeline) -> list:
-    """Note ids in this pipeline's exact (deck, note_type) target.
-
-    Scoped to the pair so a deck shared by other note types (with their own,
-    possibly non-triggered pipelines) doesn't get swept. Returns all such notes;
-    the ops' ``only_if_empty`` then narrows the backend call to unenriched ones,
-    which also makes the sweep self-healing rather than new-cards-only.
-    """
-    query = f'deck:"{pipeline.deck}" note:"{pipeline.note_type}"'
-    return list(mw.col.find_notes(query))
+from ..config import AUTO_TRIGGER_START, load, pipelines_for_trigger
+from .run import pipeline_note_ids, run_pipeline
 
 
 def run_trigger(event: str) -> None:
-    """Run every enabled pipeline that opted into ``event`` over its notes."""
+    """Run every enabled pipeline that opted into ``event`` over its notes.
+
+    Gathering is :func:`jp_utils.ui.run.pipeline_note_ids` - shared with "Run all
+    pipelines". Every note of each target is swept, not just new ones: the ops'
+    ``only_if_empty`` narrows the backend call to the unenriched ones, which is
+    what makes the sweep self-healing.
+    """
     config = load(mw)
-    note_ids: list = []
-    seen: set = set()
-    for pipeline in pipelines_for_trigger(config.pipelines, event):
-        for nid in _note_ids_for(pipeline):
-            if nid not in seen:
-                seen.add(nid)
-                note_ids.append(nid)
+    note_ids = pipeline_note_ids(mw, pipelines_for_trigger(config.pipelines, event))
     if note_ids:
         run_pipeline(mw, note_ids, mw, config=config, silent=True)
 

@@ -195,6 +195,25 @@ def _deck_slice(mw, group: _RunGroup, views: dict[int, NoteFields], only: str = 
     return [views[nid] for nid in map(int, mw.col.find_notes(query)) if nid in views]
 
 
+def pipeline_note_ids(mw, pipelines: list[Pipeline]) -> list:
+    """The note ids in these pipelines' (deck, note type) targets, deduped, in order.
+
+    Shared by the two whole-collection entry points - "Run all pipelines" and the
+    on-start sweep (:mod:`jp_utils.ui.auto`) - which otherwise gathered notes with
+    the same loop written twice. Scoped to each exact pair, so a deck shared with
+    other note types (and their own, possibly untriggered pipelines) is not swept.
+    """
+    note_ids: list = []
+    seen: set = set()
+    for pipeline in pipelines:
+        query = f'deck:"{pipeline.deck}" note:"{pipeline.note_type}"'
+        for nid in mw.col.find_notes(query):
+            if nid not in seen:
+                seen.add(nid)
+                note_ids.append(nid)
+    return note_ids
+
+
 def _match_pipelines(mw, note_ids, config: AddonConfig) -> dict[int, Pipeline]:
     """Map each of ``note_ids`` to the enabled pipeline targeting its (deck, note type).
 
@@ -442,16 +461,8 @@ def run_all_pipelines(mw, parent, config: AddonConfig | None = None) -> None:
     """
     if config is None:
         config = load(mw)
-    note_ids: list = []
-    seen: set = set()
-    for pipeline in config.pipelines:
-        if not (pipeline.enabled and pipeline.deck and pipeline.note_type):
-            continue
-        query = f'deck:"{pipeline.deck}" note:"{pipeline.note_type}"'
-        for nid in mw.col.find_notes(query):
-            if nid not in seen:
-                seen.add(nid)
-                note_ids.append(nid)
+    runnable = [p for p in config.pipelines if p.enabled and p.deck and p.note_type]
+    note_ids = pipeline_note_ids(mw, runnable)
     if not note_ids:
         tooltip("No enabled pipelines to run.", parent=parent)
         return
