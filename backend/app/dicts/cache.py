@@ -16,6 +16,7 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 
 from app.dicts.parsers import (
@@ -28,6 +29,8 @@ from app.dicts.paths import DictKind, default_cache_path, resolve_dict_path
 from app.text.convert import kata_to_hira
 
 logger = logging.getLogger("jp_utils.backend")
+
+_LOOKUP_CACHE_SIZE = 8192
 
 SCHEMA_VERSION = 4  # v4: add the pitches table (downstep positions per term+reading)
 
@@ -213,6 +216,13 @@ class DictCache:
         self._path = cache_path
         self._local = threading.local()
         self._status: list[DictTableStatus] | None = None
+        # A built cache is immutable, so a lookup's answer never changes. The same
+        # words recur constantly across a corpus (furigana is looked up once per
+        # TOKEN), so memoizing turns most of that into dict hits. Bounded, and
+        # shared across threads - `lru_cache` is itself thread-safe.
+        self._lookup_frequency = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._frequency)
+        self._lookup_furigana = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._furigana)
+        self._lookup_pitch = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._pitch)
 
     @classmethod
     def open(cls, cache_path: Path | None = None) -> "DictCache | None":
@@ -291,7 +301,11 @@ class DictCache:
         ]
 
     def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
-        """Frequency rank for a term (lower = more frequent), or None.
+        """Frequency rank for a term (lower = more frequent), or None. Memoized."""
+        return self._lookup_frequency(term, reading)
+
+    def _frequency(self, term: str, reading: str | None = None) -> int | None:
+        """Uncached :meth:`lookup_frequency`.
 
         With a reading, return that reading's rank (homographs differ); readings
         are compared in hiragana space. If the (term, reading) pair isn't ranked,
@@ -314,7 +328,15 @@ class DictCache:
         return row["rank"] if row and row["rank"] is not None else None
 
     def lookup_furigana(self, text: str, reading: str) -> list[dict] | None:
-        """rt-bearing furigana segments for a (text, reading) pair, or None."""
+        """rt-bearing furigana segments for a (text, reading) pair, or None.
+
+        Memoized, so the returned list is SHARED between callers - treat it as
+        read-only (every caller today just renders it into new segment objects).
+        """
+        return self._lookup_furigana(text, reading)
+
+    def _furigana(self, text: str, reading: str) -> list[dict] | None:
+        """Uncached :meth:`lookup_furigana`."""
         row = (
             self._conn()
             .execute(
@@ -327,6 +349,13 @@ class DictCache:
 
     def lookup_pitch(self, term: str, reading: str | None = None) -> list[int]:
         """Downstep positions for a term (0 = heiban), ascending and de-duplicated.
+
+        Memoized; the returned list is shared, so treat it as read-only.
+        """
+        return self._lookup_pitch(term, reading)
+
+    def _pitch(self, term: str, reading: str | None = None) -> list[int]:
+        """Uncached :meth:`lookup_pitch`.
 
         With a reading, return that reading's accents (homographs differ); readings
         are compared in hiragana space. Without a reading, return the union across
@@ -347,6 +376,15 @@ class DictCache:
         return [row["position"] for row in cur.fetchall()]
 
     def close(self) -> None:
+        """Close this thread's connection and drop the memoized lookups.
+
+        Clearing the caches matters because they hold rows read through a
+        connection that is about to go away, and because the accessor is closed at
+        shutdown - nothing should keep the results alive past it.
+        """
+        self._lookup_frequency.cache_clear()
+        self._lookup_furigana.cache_clear()
+        self._lookup_pitch.cache_clear()
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             conn.close()
