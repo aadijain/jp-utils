@@ -212,6 +212,7 @@ class DictCache:
     def __init__(self, cache_path: Path) -> None:
         self._path = cache_path
         self._local = threading.local()
+        self._status: list[DictTableStatus] | None = None
 
     @classmethod
     def open(cls, cache_path: Path | None = None) -> "DictCache | None":
@@ -246,12 +247,21 @@ class DictCache:
         return conn
 
     def status(self) -> list[DictTableStatus]:
-        conn = self._conn()
-        out: list[DictTableStatus] = []
-        for name in DICT_TABLES:
-            count = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-            out.append(DictTableStatus(name=name, loaded=count > 0, entries=count))
-        return out
+        """Per-table row counts, computed once and reused.
+
+        A built cache is immutable - nothing writes to it at runtime - so the
+        counts cannot change while this accessor is open. Without memoizing, every
+        `/health` call full-scans all four tables (~1.07M rows: ~560ms cold,
+        ~22ms warm). Two threads racing here simply compute the same answer.
+        """
+        if self._status is None:
+            conn = self._conn()
+            out: list[DictTableStatus] = []
+            for name in DICT_TABLES:
+                count = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+                out.append(DictTableStatus(name=name, loaded=count > 0, entries=count))
+            self._status = out
+        return self._status
 
     def lookup_meaning(self, lemma: str, reading: str | None = None) -> list[dict]:
         """Meaning entries for a lemma, best (highest score) first."""

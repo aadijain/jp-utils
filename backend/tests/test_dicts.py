@@ -127,6 +127,24 @@ def test_build_cache_reports_entries(built_cache: Path) -> None:
     assert all(s.loaded for s in status.values())
 
 
+def test_status_counts_are_computed_once(built_cache: Path) -> None:
+    """A built cache is immutable, so /health must not re-scan it on every call."""
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    first = cache.status()
+
+    scans: list[str] = []
+    real_conn = cache._conn
+
+    def counting_conn():
+        scans.append("scan")
+        return real_conn()
+
+    cache._conn = counting_conn  # type: ignore[method-assign]
+    assert cache.status() == first  # same answer...
+    assert not scans  # ...served from the memo, without touching the db again
+
+
 def test_lookup_meaning(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
