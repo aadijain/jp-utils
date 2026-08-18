@@ -9,12 +9,24 @@ and writes a ``[sound:...]`` reference into the ``word-audio`` output alias (Lap
 
 Both inputs are required: the reading disambiguates homographs (人 ひと vs じん),
 so a note without a reading is skipped rather than risking the wrong audio.
+
+This is the one op whose backend cost scales with the batch (two serial network
+hops per word), so it sends a per-word timeout budget rather than the client's
+flat default.
 """
 
 import base64
 
-from ..client import BackendClient
+from ..client import DEFAULT_TIMEOUT, BackendClient
 from .base import MediaOperation, MediaResult
+
+# The backend resolves each word with two serial hops to the local audio server
+# (list the sources, then download the chosen file), so this endpoint's cost grows
+# with the batch - unlike every other op, which answers from SQLite. A start sweep
+# over a few hundred new word cards would blow the client's flat default timeout
+# long before the backend was done, failing the whole run. Budget per word instead,
+# never going below the default.
+_TIMEOUT_PER_WORD = 2.0
 
 
 class WordAudioOperation(MediaOperation):
@@ -31,7 +43,8 @@ class WordAudioOperation(MediaOperation):
         self, client: BackendClient, sources: list[dict[str, str]]
     ) -> list[MediaResult | None]:
         queries = [{"term": s["word"], "reading": s["word-reading"]} for s in sources]
-        resp = client.post("/v1/text/audio", {"queries": queries})
+        timeout = max(DEFAULT_TIMEOUT, _TIMEOUT_PER_WORD * len(queries))
+        resp = client.post("/v1/text/audio", {"queries": queries}, timeout=timeout)
         results = resp.get("results", [])
         out: list[MediaResult | None] = [None] * len(sources)
         for i, result in enumerate(results[: len(sources)]):

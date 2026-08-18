@@ -52,12 +52,29 @@ class BackendClient:
         """Public health probe (``GET /health``); reports dict/tokenizer state."""
         return self.request("GET", "/health", auth=False)
 
-    def post(self, path: str, body: dict) -> dict:
-        """POST a JSON body to a backend path and return the parsed response."""
-        return self.request("POST", path, body=body)
+    def post(self, path: str, body: dict, timeout: float | None = None) -> dict:
+        """POST a JSON body to a backend path and return the parsed response.
+
+        ``timeout`` overrides the client default for this one call - for endpoints
+        whose cost scales with the batch (see :meth:`request`).
+        """
+        return self.request("POST", path, body=body, timeout=timeout)
 
     # ── Core ─────────────────────────────────────────────────────────────────
-    def request(self, method: str, path: str, body: dict | None = None, auth: bool = True) -> dict:
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        auth: bool = True,
+        timeout: float | None = None,
+    ) -> dict:
+        """Perform one JSON request.
+
+        ``timeout`` (seconds) overrides :attr:`timeout` for this call. Most
+        endpoints answer from memory or SQLite and comfortably fit the default;
+        the ones that fan out per batch entry do not, and pass their own.
+        """
         url = self.base_url + path
         headers = {"Accept": "application/json"}
         data = None
@@ -69,7 +86,7 @@ class BackendClient:
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as exc:
             raise self._http_error(exc) from exc
