@@ -181,6 +181,28 @@ def test_lookup_frequency_disambiguates_by_reading(built_cache: Path) -> None:
     assert cache.lookup_frequency("水", "ちがう") is None
 
 
+def test_lookup_frequency_many_matches_the_single_lookup(built_cache: Path) -> None:
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    terms = ["水", "みず", "存在しない", "水"]  # includes a dup and an unranked term
+    ranks = cache.lookup_frequency_many(terms)
+    # Same answers as the one-at-a-time path; unranked terms are simply absent.
+    assert ranks == {"水": 500, "みず": 1500}
+    assert all(ranks.get(t) == cache.lookup_frequency(t) for t in terms)
+    assert cache.lookup_frequency_many([]) == {}
+
+
+def test_lookup_frequency_many_chunks_past_the_variable_limit(
+    built_cache: Path, monkeypatch
+) -> None:
+    """SQLite caps a statement at 999 variables; a full-deck sort passes thousands."""
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    monkeypatch.setattr("app.dicts.cache._CHUNK", 2)
+    terms = [f"未知{i}" for i in range(7)] + ["水"]
+    assert cache.lookup_frequency_many(terms) == {"水": 500}
+
+
 def test_lookup_furigana(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
