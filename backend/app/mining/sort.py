@@ -50,16 +50,13 @@ def _lemma_ranks(lemma_lists: list[list[str]], cache: DictCache | None) -> dict[
     """JPDB rank per distinct lemma, for the unknown-word frequency tie-break.
 
     Lemma-only lookup (reading is not a safe key yet); unranked words tie lower.
-    Empty without a dict cache (the tie-break is simply skipped).
+    Empty without a dict cache (the tie-break is simply skipped). Resolved in one
+    batch - a full-deck sort has thousands of distinct lemmas, and per-lemma
+    round trips dominated the sort.
     """
     if cache is None:
         return {}
-    ranks: dict[str, int] = {}
-    for lemma in {lemma for lemmas in lemma_lists for lemma in lemmas}:
-        rank = cache.lookup_frequency(lemma, None)
-        if rank is not None:
-            ranks[lemma] = rank
-    return ranks
+    return cache.lookup_frequency_many(lemma for lemmas in lemma_lists for lemma in lemmas)
 
 
 def nplus1_sort(
