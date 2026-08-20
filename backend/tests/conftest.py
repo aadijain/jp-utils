@@ -165,6 +165,17 @@ _FURIGANA_ROWS = [
         "reading": "にほんご",
         "furigana": [{"ruby": "日本", "rt": "にほん"}, {"ruby": "語", "rt": "ご"}],
     },
+    # 人 has a curated row per reading, so a caller-supplied reading picks a
+    # different row than the tokenizer's context-free one (the reading override).
+    {"text": "人", "reading": "ひと", "furigana": [{"ruby": "人", "rt": "ひと"}]},
+    {"text": "人", "reading": "じん", "furigana": [{"ruby": "人", "rt": "じん"}]},
+    # 十分 is ONE word that mode C tokenizes as two (十 + 分), so its curated row
+    # is only reachable by looking the whole text up.
+    {
+        "text": "十分",
+        "reading": "じゅうぶん",
+        "furigana": [{"ruby": "十", "rt": "じゅう"}, {"ruby": "分", "rt": "ぶん"}],
+    },
 ]
 
 

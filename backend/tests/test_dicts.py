@@ -123,7 +123,7 @@ def test_build_cache_reports_entries(built_cache: Path) -> None:
     status = {s.name: s for s in cache.status()}
     assert status["meanings"].entries == 3  # 食べる, 水, 人/ひと (low-score readings dropped)
     assert status["frequencies"].entries == 4  # (水,みず), (水,すい), (みず,みず), (食べる,たべる)
-    assert status["furigana"].entries == 3
+    assert status["furigana"].entries == 6  # 食べる, 水, 日本語, 人/ひと, 人/じん, 十分
     assert status["pitches"].entries == 5  # 水/みず, 人/ひと x2, 人/にん, 食べる/たべる
     assert all(s.loaded for s in status.values())
 

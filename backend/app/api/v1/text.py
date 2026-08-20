@@ -90,11 +90,26 @@ def furigana(
     tokenizer: Tokenizer = Depends(get_tokenizer),
     cache: DictCache | None = Depends(get_dict_cache),
 ) -> FuriganaResponse:
-    """Annotate a batch of texts with furigana. Results aligned with `req.texts`."""
+    """Annotate a batch of texts with furigana. Results aligned with `req.texts`.
+
+    `req.readings` is an optional per-text reading override: where one is given
+    the segments are forced to spell it out (see `text/furigana.py:annotate`), so
+    pass it only for a lone word. It is either empty or exactly as long as
+    `texts` - a short list would silently annotate the wrong entries, so it is
+    rejected rather than zipped.
+    """
     check_batch(req.texts, "texts")
+    if req.readings and len(req.readings) != len(req.texts):
+        raise APIError(
+            400,
+            "misaligned_readings",
+            f"readings has {len(req.readings)} entries for {len(req.texts)} texts; "
+            "it must be empty or aligned with texts",
+        )
+    readings = req.readings or [""] * len(req.texts)
     results = [
-        FuriganaText(text=text, segments=annotate(tokenizer, text, cache, req.mode))
-        for text in req.texts
+        FuriganaText(text=text, segments=annotate(tokenizer, text, cache, req.mode, reading))
+        for text, reading in zip(req.texts, readings, strict=True)
     ]
     return FuriganaResponse(results=results)
 

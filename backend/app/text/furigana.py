@@ -6,6 +6,9 @@ aligning the tokenizer's reading onto the surface for inflected/out-of-dictionar
 words (e.g. 食べ -> 食|べ). Works without the furigana dict (cache=None): then
 everything goes through alignment, so compounds stay unsplit but readings are
 still correct.
+
+A caller that already knows a word's reading can force the segments to spell it
+out, whatever the tokenizer thinks - see :func:`annotate`.
 """
 
 import re
@@ -96,13 +99,57 @@ def _merge_plain(segments: list[FuriganaSegment]) -> list[FuriganaSegment]:
     return out
 
 
+def _spelled_reading(segments: list[FuriganaSegment]) -> str:
+    """The reading `segments` spell out end to end, in hiragana."""
+    return "".join(seg.reading or kata_to_hira(seg.text) for seg in segments)
+
+
+def _forced_segments(
+    text: str, reading: str, cache: DictCache | None, tokenized: list[FuriganaSegment]
+) -> list[FuriganaSegment]:
+    """Segments for `text` that spell out `reading` (hiragana), best split first.
+
+    A curated row for the WHOLE text wins; else the tokenized split is kept if it
+    already agrees with `reading`; else the reading is aligned over the whole
+    surface; else the lot gets rubied. Only the first two can split a compound -
+    the rest trade grouping for ruby that never contradicts the caller.
+    """
+    if not _has_kanji(text):
+        return [FuriganaSegment(text=text, reading="")]
+    if cache is not None:
+        curated = cache.lookup_furigana(text, reading)
+        if curated:
+            return [FuriganaSegment(text=s["ruby"], reading=s["rt"]) for s in curated]
+    if _spelled_reading(tokenized) == reading:
+        return tokenized
+    aligned = _align(text, reading)
+    if aligned is not None:
+        return aligned
+    return [FuriganaSegment(text=text, reading=reading)]
+
+
 def annotate(
     tokenizer: Tokenizer,
     text: str,
     cache: DictCache | None,
     mode: SplitMode = SplitMode.C,
+    reading: str = "",
 ) -> list[FuriganaSegment]:
+    """Furigana segments for `text`, optionally forced to a caller-known `reading`.
+
+    Pass `reading` for a lone word whose reading the caller already knows, where
+    the tokenizer's is a context-free guess that may be wrong (jukujikun and
+    variant-unified words: 鍛冶 tokenizes as タンヤ, 十分 as ジュウフン). The
+    result then spells out `reading` whatever the token count - 十分/じゅうぶん
+    has a curated row and splits 十[じゅう]分[ぶん] even though mode C tokenizes
+    it as 十 + 分. :func:`_forced_segments` is the ladder it goes down.
+
+    Callers annotating a SENTENCE pass no `reading`: one reading can't describe
+    several words, so there the tokenizer's per-token readings are all there is.
+    """
     segments: list[FuriganaSegment] = []
     for token in tokenizer.tokenize(text, mode):
         segments.extend(_segments_for_token(token.surface, token.reading, cache))
+    if reading:
+        segments = _forced_segments(text, kata_to_hira(reading), cache, segments)
     return _merge_plain(segments)

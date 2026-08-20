@@ -58,6 +58,75 @@ def test_annotate_plain_kana(tokenizer: Tokenizer) -> None:
     assert annotate(tokenizer, "かわいい", None) == [FuriganaSegment("かわいい", "")]
 
 
+# ── Caller-supplied reading override (lone word) ─────────────────────────────
+
+
+def test_annotate_reading_override_picks_the_curated_row(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    # 人 has a curated row per reading; the override selects じん over the
+    # tokenizer's context-free reading (the jukujikun / 鍛冶 case).
+    cache = DictCache.open(built_cache)
+    assert annotate(tokenizer, "人", cache, reading="じん") == [FuriganaSegment("人", "じん")]
+    assert annotate(tokenizer, "人", cache) == [FuriganaSegment("人", "ひと")]
+
+
+def test_annotate_reading_override_accepts_katakana(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    assert annotate(tokenizer, "人", cache, reading="ジン") == [FuriganaSegment("人", "じん")]
+
+
+def test_annotate_reading_override_aligns_without_a_curated_row(tokenizer: Tokenizer) -> None:
+    # No cache: the override is aligned onto the surface like any other reading.
+    assert annotate(tokenizer, "食べる", None, reading="たべる") == [
+        FuriganaSegment("食", "た"),
+        FuriganaSegment("べる", ""),
+    ]
+
+
+def test_annotate_reading_override_reaches_a_multi_token_word(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    # 十分 is one word that mode C splits 十 + 分, so the tokenizer reads it
+    # じゅうふん; the curated row for the WHOLE text carries the override.
+    cache = DictCache.open(built_cache)
+    assert annotate(tokenizer, "十分", cache, reading="じゅうぶん") == [
+        FuriganaSegment("十", "じゅう"),
+        FuriganaSegment("分", "ぶん"),
+    ]
+    assert annotate(tokenizer, "十分", cache) == [
+        FuriganaSegment("十", "じゅう"),
+        FuriganaSegment("分", "ふん"),
+    ]
+
+
+def test_annotate_reading_override_keeps_the_tokenized_split_when_it_agrees(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    # No curated row for the whole text, but the per-token readings already
+    # spell out the override -> the finer tokenized segmentation is kept.
+    cache = DictCache.open(built_cache)
+    assert annotate(tokenizer, "日本語の人", cache, reading="にほんごのひと") == [
+        FuriganaSegment("日本", "にほん"),
+        FuriganaSegment("語", "ご"),
+        FuriganaSegment("の", ""),
+        FuriganaSegment("人", "ひと"),
+    ]
+
+
+def test_annotate_reading_override_never_contradicts_the_caller(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    # Nothing can split a reading that neither a curated row nor the tokenizer
+    # produces, but the ruby must still say what the caller asked for.
+    cache = DictCache.open(built_cache)
+    assert annotate(tokenizer, "日本語の人", cache, reading="でたらめ") == [
+        FuriganaSegment("日本語の人", "でたらめ")
+    ]
+
+
 # ── Endpoint ─────────────────────────────────────────────────────────────────
 
 
@@ -76,6 +145,34 @@ def test_furigana_endpoint(
         {"text": "日本", "reading": "にほん"},
         {"text": "語", "reading": "ご"},
     ]
+
+
+def test_furigana_endpoint_honours_readings(
+    text_client_with_dicts: TestClient, auth_headers: dict[str, str]
+) -> None:
+    resp = text_client_with_dicts.post(
+        "/v1/text/furigana",
+        headers=auth_headers,
+        json={"texts": ["人", "人"], "readings": ["じん", ""]},
+    )
+
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert results[0]["segments"] == [{"text": "人", "reading": "じん"}]
+    assert results[1]["segments"] == [{"text": "人", "reading": "ひと"}]
+
+
+def test_furigana_endpoint_rejects_misaligned_readings(
+    text_client_with_dicts: TestClient, auth_headers: dict[str, str]
+) -> None:
+    resp = text_client_with_dicts.post(
+        "/v1/text/furigana",
+        headers=auth_headers,
+        json={"texts": ["人", "水"], "readings": ["じん"]},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "misaligned_readings"
 
 
 def test_furigana_requires_auth(client: TestClient) -> None:
