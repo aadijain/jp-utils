@@ -221,6 +221,20 @@ class Operation(ABC):
         """
         return all(inputs.get(alias) for alias in self.io_spec(params).required_inputs)
 
+    def target_problems(self, params: dict | None, note_types: dict) -> list[str]:
+        """Human-readable reasons this step's PARAMS can't work (empty = fine).
+
+        The alias checks in :func:`jp_utils.config.pipeline_problems` validate the
+        note type the pipeline RUNS on. An op that also writes somewhere else - the
+        generate op's target deck + note type - validates that side here, because
+        only the op knows what its own params mean. ``note_types`` is the whole
+        alias-mapping config, keyed by note type name.
+
+        Returned strings are shown verbatim next to the other pipeline problems,
+        so they read as instructions ("Set a ..."), not as diagnostics.
+        """
+        return []
+
 
 # Shared spec for field-writing operations: skip a note whose output field is
 # already populated. Not every operation has this (a sort op does not).
