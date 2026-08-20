@@ -71,11 +71,17 @@ def test_tagged_cards_become_forced_events_in_the_same_call():
     assert client.calls == [("/v1/text/normalize", {"surfaces": ["猫", "既に", "は"]})]
 
 
-def test_card_word_reading_is_preferred_over_the_deinflected_one():
+def test_card_word_reading_is_preferred_when_nothing_was_deinflected():
     client = _FakeClient(
-        {"/v1/text/normalize": {"results": [{"lemma": "開く", "reading": "あく"}]}}
+        {
+            "/v1/text/normalize": {
+                "results": [
+                    {"surface": "開く", "lemma": "開く", "reading": "あく", "covered": True}
+                ]
+            }
+        }
     )
-    # The card carries its own (homograph-disambiguating) reading; it wins.
+    # Lemma == surface, so the card's own (homograph-disambiguating) reading wins.
     unforced, forced = SyncWordStatusOperation().collect(
         client,
         seen_sources=[{"word": "開く", "word-reading": "ひらく"}],
@@ -84,6 +90,51 @@ def test_card_word_reading_is_preferred_over_the_deinflected_one():
     )
     assert unforced == [{"lemma": "開く", "reading": "ひらく", "action": "seen", "source": "anki"}]
     assert forced == []
+
+
+def test_deinflected_lemma_ignores_the_cards_reading():
+    client = _FakeClient(
+        {
+            "/v1/text/normalize": {
+                "results": [
+                    {"surface": "攻め", "lemma": "攻める", "reading": "せめる", "covered": True}
+                ]
+            }
+        }
+    )
+    # The card's せめ is the reading of 攻め, not of 攻める - pairing them would key
+    # a real lemma under a reading that is not its own.
+    unforced, _ = SyncWordStatusOperation().collect(
+        client,
+        seen_sources=[],
+        learnt_sources=[{"word": "攻め", "word-reading": "せめ"}],
+        tagged_sources={},
+    )
+    assert unforced == [
+        {"lemma": "攻める", "reading": "せめる", "action": "learnt", "source": "anki"}
+    ]
+
+
+def test_uncovered_surfaces_are_dropped():
+    client = _FakeClient(
+        {
+            "/v1/text/normalize": {
+                "results": [
+                    {"surface": "だます", "lemma": "だ", "reading": "だ", "covered": False},
+                    {"surface": "猫", "lemma": "猫", "reading": "ねこ", "covered": True},
+                ]
+            }
+        }
+    )
+    # A misparse with no word head writes no state, forced or not; its neighbour still does.
+    unforced, forced = SyncWordStatusOperation().collect(
+        client,
+        seen_sources=[{"word": "だます"}],
+        learnt_sources=[],
+        tagged_sources={"ignored": [{"word": "猫"}]},
+    )
+    assert unforced == []
+    assert forced == [{"lemma": "猫", "reading": "ねこ", "action": "ignored", "source": "anki"}]
 
 
 def test_falls_back_to_deinflected_reading_when_card_has_none():
