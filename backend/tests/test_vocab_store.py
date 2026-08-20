@@ -182,6 +182,46 @@ def test_force_applies_directly(vocab_store: VocabStore) -> None:
     assert vocab_store._status_map()[("水", "みず")] == WordStatus.SEEN
 
 
+def test_forced_noop_is_not_appended(vocab_store: VocabStore) -> None:
+    # The add-on re-posts every tag-forced event on each sweep by design. A forced
+    # event that restates the current status must not grow the table.
+    ignored = RecordEntry(
+        lemma="は", reading="は", action=VocabAction.IGNORED, source=VocabSource.ANKI
+    )
+    assert vocab_store.record([ignored], force=True) == 1
+    assert vocab_store.record([ignored], force=True) == 0
+    assert vocab_store.record([ignored], force=True) == 0
+    assert vocab_store.status().events == 1
+    assert vocab_store._status_map()[("は", "は")] == WordStatus.IGNORED
+
+
+def test_forced_noop_skip_does_not_block_a_real_change(vocab_store: VocabStore) -> None:
+    # The no-op skip is status equality only - a forced downgrade still applies.
+    vocab_store.record([RecordEntry(lemma="水", reading="みず", action=VocabAction.LEARNT)])
+    same = RecordEntry(lemma="水", reading="みず", action=VocabAction.LEARNT)
+    assert vocab_store.record([same], force=True) == 0
+    down = RecordEntry(lemma="水", reading="みず", action=VocabAction.SEEN)
+    assert vocab_store.record([down], force=True) == 1
+    assert vocab_store._status_map()[("水", "みず")] == WordStatus.SEEN
+
+
+def test_forced_removed_on_an_unknown_word_is_a_noop(vocab_store: VocabStore) -> None:
+    # `removed` projects to unknown, which is what an unrecorded word already is.
+    n = vocab_store.record(
+        [RecordEntry(lemma="猫", reading="ねこ", action=VocabAction.REMOVED)], force=True
+    )
+    assert n == 0
+    assert vocab_store.status().events == 0
+
+
+def test_forced_batch_dedupes_within_itself(vocab_store: VocabStore) -> None:
+    # Two cards tagged for the same word in one sweep -> one row, not two.
+    entry = RecordEntry(
+        lemma="は", reading="は", action=VocabAction.IGNORED, source=VocabSource.ANKI
+    )
+    assert vocab_store.record([entry, entry], force=True) == 1
+
+
 def test_status_counts(vocab_store: VocabStore) -> None:
     vocab_store.record([RecordEntry(lemma="水", reading="みず")])
     vocab_store.record(

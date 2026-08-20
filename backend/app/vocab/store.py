@@ -57,7 +57,8 @@ _PRESENT = {VocabAction.SEEN, VocabAction.LEARNT, VocabAction.IGNORED, VocabActi
 # The auto progression unknown < seen < learnt. An unforced event is appended ONLY
 # when it raises the word's status (no downgrade, no churn) and never over a
 # terminal `ignored`/`blacklisted`. A forced event (a deliberate action) bypasses
-# both checks.
+# both checks - but NOT the no-op check: no path appends an event whose target
+# status already matches the word's current one.
 _AUTO_RANK = {WordStatus.UNKNOWN: 0, WordStatus.SEEN: 1, WordStatus.LEARNT: 2}
 _MANUAL_TERMINAL = {WordStatus.IGNORED, WordStatus.BLACKLISTED}
 
@@ -152,28 +153,40 @@ class VocabStore:
         """Append a batch of events; returns the number of rows actually written.
 
         With ``force`` (a deliberate action: a manual add, an ignore/blacklist, a
-        downgrade, a revert) every entry is appended as-is. Without it, entries are
-        upgrade-only: a `seen`/`learnt` is appended only when it raises the word's
-        status, and never over a terminal `ignored`/`blacklisted` - so the
-        latest-event-wins projection never downgrades. Returns fewer than submitted
-        when guarded events are skipped.
+        downgrade, a revert) the progression guard is bypassed, so an entry may
+        downgrade a word or clobber a terminal `ignored`/`blacklisted`. Without it,
+        entries are upgrade-only: a `seen`/`learnt` is appended only when it raises
+        the word's status, and never over a terminal one - so the latest-event-wins
+        projection never downgrades.
+
+        An entry whose target status already equals the word's current status is
+        skipped on BOTH paths: appending it would change nothing the projection can
+        see, and re-asserting the same state every sweep is what grew the table (the
+        add-on re-posts every tag-forced event on each run by design). ``force``
+        means "bypass the guard", NOT "append unconditionally". Returns fewer than
+        submitted when guarded or no-op events are skipped.
         """
         entries = list(entries)
         if not entries:
             return 0
-        current = {} if force else self._status_map()  # guard unforced events
+        # Read unconditionally: it guards the unforced path AND dedupes forced no-ops.
+        current = self._status_map()
         ts = datetime.now(UTC).isoformat()
         rows = []
         for e in entries:
             key = (e.lemma, e.reading)
             target = _status_of(e.action)
+            cur = current.get(key, WordStatus.UNKNOWN)
+            if target == cur:
+                continue  # no-op: the projection already says this. Never append.
             if not force:
-                cur = current.get(key, WordStatus.UNKNOWN)
                 if cur in _MANUAL_TERMINAL:
                     continue  # don't clobber a terminal ignore/blacklist
                 if _AUTO_RANK.get(target, 0) <= _AUTO_RANK.get(cur, 0):
                     continue  # not an upgrade -> skip (no downgrade, no churn)
-                current[key] = target  # reflect for later entries in the same batch
+            # Reflect for later entries in the same batch (forced ones included, so a
+            # word tagged on two cards writes one row, not two).
+            current[key] = target
             rows.append((ts, e.lemma, e.reading, str(e.action), str(e.source)))
         if not rows:
             return 0
