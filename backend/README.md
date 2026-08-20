@@ -16,7 +16,7 @@ The API is **batch-first**: send many texts in one request and get results align
 |---|---|
 | `POST /tokenize` | Split Japanese text into words, each with dictionary form, reading, and part of speech (SudachiPy; split mode A/B/C) |
 | `POST /space` | Insert spaces at word boundaries |
-| `POST /furigana` | Annotate text with per-word readings (curated JmdictFurigana, falling back to reading alignment) |
+| `POST /furigana` | Annotate text with per-word readings (curated JmdictFurigana, falling back to reading alignment); an optional `readings` list forces a lone word's segments to spell out a reading you already know |
 | `POST /convert` | hiragana/katakana, romaji, and full-width/half-width conversion |
 | `POST /meaning` | Dictionary definitions, per-sense (Jitendex); optional reading filter |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
