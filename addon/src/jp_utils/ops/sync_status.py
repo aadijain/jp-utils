@@ -11,8 +11,12 @@ single source of truth for the seen->learnt progression:
   deliberate "I know this" just like reviewing it).
 
 Each card's ``word`` field is deinflected to its lemma via ``POST /v1/text/normalize``;
-the **reading** is taken from the card's own ``word-reading`` field when it has one
-(the reading the card was enriched with), falling back to the deinflected reading.
+the **reading** is taken from the card's own ``word-reading`` field (the reading the
+card was enriched with) only when the surface came back **undeinflected**
+(``lemma == surface``), and from the deinflected reading otherwise. The card's field
+holds the reading of the surface as written, so pairing it with a lemma that differs
+from that surface keys a real lemma under a reading that is not its own. A surface the
+backend reports as not ``covered`` (nothing in it heads a word) is skipped outright.
 Both the lemma and reading key the vocab event ``(lemma, reading)``. ``word-reading``
 is an input but optional - only ``word`` is required, so a card not yet enriched with
 a reading still syncs. It runs over the
@@ -100,12 +104,18 @@ class SyncWordStatusOperation(StatusOperation):
         forced: list[dict] = []
         for (source, action, force), result in zip(triples, results, strict=True):
             lemma = result.get("lemma", "")
-            if not lemma:
+            # `covered=False` means nothing in the surface headed a word at all
+            # (punctuation, a bare auxiliary, a misparse); never write it as state.
+            if not lemma or not result.get("covered", True):
                 continue
-            # Prefer the card's own reading; fall back to the deinflected one.
-            reading = strip_markup(source.get("word-reading", "")).strip() or result.get(
-                "reading", ""
-            )
+            # The card's reading belongs to the surface AS WRITTEN, so it is this
+            # lemma's reading only when nothing was deinflected. Otherwise it would
+            # key a real lemma under a reading that is not its own (攻め -> 攻める
+            # paired with せめ), which is a fresh junk key, not an upgrade.
+            card_reading = strip_markup(source.get("word-reading", "")).strip()
+            deinflected = result.get("reading", "")
+            unchanged = lemma == result.get("surface", "").strip()
+            reading = card_reading if (card_reading and unchanged) else deinflected
             entry = {
                 "lemma": lemma,
                 "reading": reading,
