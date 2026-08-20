@@ -93,9 +93,10 @@ ON_EXISTING = ParamSpec(
     "When a card already exists",
     "choice",
     default="skip",
-    choices=("skip", "overwrite", "duplicate"),
+    choices=("skip", "overwrite", "fill", "duplicate"),
     description="A card with the same word + reading already exists: skip leaves it, "
-    "overwrite refreshes its seeded + copied fields, duplicate creates another card anyway.",
+    "overwrite refreshes its seeded + copied fields, fill writes only the ones that are "
+    "still empty (never touching a hand edit), duplicate creates another card anyway.",
 )
 COPY_ALIASES = ParamSpec(
     "copy_aliases",

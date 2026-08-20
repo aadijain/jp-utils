@@ -21,7 +21,7 @@ from aqt.utils import showInfo, showWarning, tooltip
 from .. import editlog
 from ..client import BackendClient, BackendError
 from ..config import AddonConfig, Pipeline, load
-from ..generation import context_aliases, word_key
+from ..generation import context_aliases, should_write, word_key
 from ..ops import (
     ALL_OPERATIONS,
     ConfiguredOp,
@@ -50,9 +50,10 @@ class _GenCounts:
 
     created: int = 0
     overwritten: int = 0
+    filled: int = 0
 
     def __bool__(self) -> bool:
-        return bool(self.created or self.overwritten)
+        return bool(self.created or self.overwritten or self.filled)
 
 
 @dataclass
@@ -659,9 +660,11 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig, log: _EditLog)
 
     Dedups by ``(word, word-reading)`` note existence in the target deck (homographs
     with different readings stay distinct); on a hit ``on_existing`` chooses skip
-    (default) or overwrite. Each note seeds ``word`` + ``word-reading`` and copies
-    the context fields mapped on both note types (see :mod:`jp_utils.generation`);
-    enrichment/sort/status are left to the existing pipelines + the start-sweep.
+    (default), overwrite (refresh every seeded + copied field), fill (write only the
+    ones still empty) or duplicate. Each note seeds ``word`` + ``word-reading`` and
+    copies the context fields mapped on both note types (see
+    :mod:`jp_utils.generation`); enrichment/sort/status are left to the existing
+    pipelines + the start-sweep.
     """
     # Group by target so the existing-note index is built once per (deck, note type).
     by_target: dict[tuple[str, str], list] = {}
@@ -687,6 +690,9 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig, log: _EditLog)
         # earlier one's fields. `dirty` is the subset something actually changed on.
         loaded: dict[object, Any] = {}
         dirty: dict[object, object] = {}
+        # Which mode first changed each dirty note, so the report can say "overwrote"
+        # or "filled" rather than lumping both into one count.
+        mode_of: dict[object, str] = {}
         for result in results:
             on_existing = result.params.get("on_existing", "skip")
             src_note = mw.col.get_note(NoteId(result.note_id))
@@ -709,14 +715,22 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig, log: _EditLog)
                 # so both sides of the match agree. `duplicate` skips the check entirely.
                 key = word_key(lemma, reading if reading_field else "")
                 if on_existing != "duplicate" and key in existing:
-                    if on_existing == "overwrite":
+                    if on_existing in ("overwrite", "fill"):
                         nid = existing[key]
                         note = loaded.get(nid)
                         if note is None:
                             note = loaded[nid] = mw.col.get_note(nid)
-                        names = _fill_note(note, target_mapping, copy, reading, src_fields)
+                        names = _fill_note(
+                            note,
+                            target_mapping,
+                            copy,
+                            reading,
+                            src_fields,
+                            only_if_empty=on_existing == "fill",
+                        )
                         if names:
                             dirty[nid] = note
+                            mode_of.setdefault(nid, on_existing)
                             log.note(
                                 mw,
                                 "field",
@@ -747,25 +761,38 @@ def _apply_generation(mw, gen_results: list, config: AddonConfig, log: _EditLog)
 
         if dirty:
             mw.col.update_notes(list(dirty.values()))
-            counts.overwritten += len(dirty)
+            filled = sum(1 for nid in dirty if mode_of.get(nid) == "fill")
+            counts.filled += filled
+            counts.overwritten += len(dirty) - filled
     return counts
 
 
-def _fill_note(note, mapping: dict, copy: list, reading: str, src_fields: dict) -> list[str]:
+def _fill_note(
+    note,
+    mapping: dict,
+    copy: list,
+    reading: str,
+    src_fields: dict,
+    only_if_empty: bool = False,
+) -> list[str]:
     """Seed word-reading + copy context onto ``note``; return the fields changed.
 
     The list doubles as the "anything changed?" flag callers test, and feeds the
-    edit log.
+    edit log. ``only_if_empty`` is the ``on_existing: fill`` policy: a field that
+    already holds anything is left exactly as the user left it, seeds included (a
+    hand-corrected reading is as much an edit as a hand-written sentence). It never
+    applies to a NEW note, whose fields are all empty anyway.
     """
     changed: list[str] = []
     reading_field = mapping.get("word-reading")
-    if reading_field and reading_field in note and note[reading_field] != reading:
-        note[reading_field] = reading
-        changed.append(reading_field)
+    if reading_field and reading_field in note:
+        if should_write(note[reading_field], reading, only_if_empty):
+            note[reading_field] = reading
+            changed.append(reading_field)
     for alias in copy:
         field = mapping.get(alias)
         value = src_fields.get(alias, "")
-        if field and field in note and note[field] != value:
+        if field and field in note and should_write(note[field], value, only_if_empty):
             note[field] = value
             changed.append(field)
     return changed
@@ -872,6 +899,8 @@ def _report_done(
         parts.append(f"created {gen.created} note(s)")
     if gen.overwritten:
         parts.append(f"overwrote {gen.overwritten} note(s)")
+    if gen.filled:
+        parts.append(f"filled {gen.filled} note(s)")
     if n_synced:
         parts.append(f"synced {n_synced} word(s)")
     if n_translated:
