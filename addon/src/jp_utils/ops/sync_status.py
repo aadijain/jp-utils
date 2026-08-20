@@ -26,10 +26,16 @@ forces its word to the mapped action (``learnt`` / ``ignored`` / ``blacklisted``
 overriding whatever its card state would confer - tags take priority. ``ignored`` and
 ``blacklisted`` are terminal states unreachable from card state; a ``learnt`` tag
 force-marks a word known even while its card is still new. Tag events are posted
-**forced** (a deliberate action, bypassing the upgrade-only guard), so unlike the
-card-state events they re-append on every sweep - benign in the append-only store.
+**forced** (a deliberate action, bypassing the upgrade-only guard), and this op
+re-derives them on every sweep - but the store drops an event whose target status
+already matches the word's current one, so a steady tag costs one row on the sweep
+that first applies it and nothing after (and the run tooltip stays quiet).
 The wiring excludes tagged cards from the seen/learnt buckets, so a card is either
 tag-driven or state-driven, never both.
+
+Untagging is deliberately a no-op: no `removed` event is emitted, and the unforced
+`seen`/`learnt` an untagged card now produces cannot clobber a terminal status. A
+word is un-ignored by hand, not by pulling the tag.
 """
 
 from ..client import BackendClient
