@@ -342,11 +342,17 @@ class GenerateOperation(Operation, ABC):
     io_verb = "(create cards)"
 
     @abstractmethod
-    def generate(self, client: BackendClient, sources: list[dict[str, str]]) -> list[list[dict]]:
+    def generate(
+        self,
+        client: BackendClient,
+        sources: list[dict[str, str]],
+        params: dict | None = None,
+    ) -> list[list[dict]]:
         """Per source note (aligned), the new words to create as ``{lemma, reading}``.
 
         ``sources`` are the alias-keyed source-note views; the return is aligned to
         it, each entry that note's surviving new words (empty = nothing to create).
+        ``params`` are the step's resolved options.
         """
 
 
@@ -582,7 +588,7 @@ def plan_generation(
         applicable = [n for n in notes if op.applicable(n.fields, item.params)]
         if not applicable:
             continue
-        per_note = op.generate(client, [n.fields for n in applicable])
+        per_note = op.generate(client, [n.fields for n in applicable], item.params)
         for note, words in zip(applicable, per_note, strict=True):
             if words:
                 plans.append(

@@ -16,11 +16,12 @@ class _FakeClient:
         return self.responses[path]
 
 
-def _client(content_results, matched):
+def _client(content_results, matched, frequencies=None):
     return _FakeClient(
         {
             "/v1/text/content-words": {"results": content_results},
             "/v1/vocab/filter-by-status": {"matched": matched},
+            "/v1/text/frequency": {"results": frequencies or []},
         }
     )
 
@@ -92,3 +93,87 @@ def test_plan_generation_skips_sources_missing_the_sentence():
     configured = [ConfiguredOp(GenerateVocabOperation(), {})]
     assert plan_generation(client, configured, notes) == []
     assert client.calls == []  # nothing applicable -> no backend call
+
+
+def test_drops_kana_only_words_more_frequent_than_the_floor():
+    # やたら is above the floor and kept; ばかり is below it and skipped.
+    client = _client(
+        [[{"lemma": "やたら", "reading": "ヤタラ"}, {"lemma": "ばかり", "reading": "バカリ"}]],
+        [{"lemma": "やたら", "reading": "ヤタラ"}, {"lemma": "ばかり", "reading": "バカリ"}],
+        frequencies=[{"rank": 2270}, {"rank": 296}],
+    )
+    out = GenerateVocabOperation().generate(client, [{"sentence": "やたらばかり"}])
+
+    assert out == [[{"lemma": "やたら", "reading": "ヤタラ"}]]
+    freq_call = client.calls[-1]
+    assert freq_call == (
+        "/v1/text/frequency",
+        {
+            "queries": [
+                {"term": "やたら", "reading": "ヤタラ"},
+                {"term": "ばかり", "reading": "バカリ"},
+            ]
+        },
+    )
+
+
+def test_kana_filter_keeps_unranked_words_and_ignores_kanji_words():
+    client = _client(
+        [[{"lemma": "猫", "reading": "ネコ"}, {"lemma": "くすぐる", "reading": "クスグル"}]],
+        [{"lemma": "猫", "reading": "ネコ"}, {"lemma": "くすぐる", "reading": "クスグル"}],
+        frequencies=[{"rank": None}],  # only the kana word is looked up
+    )
+    out = GenerateVocabOperation().generate(client, [{"sentence": "猫をくすぐる"}])
+
+    assert out == [
+        [{"lemma": "猫", "reading": "ネコ"}, {"lemma": "くすぐる", "reading": "クスグル"}]
+    ]
+    assert client.calls[-1][1] == {"queries": [{"term": "くすぐる", "reading": "クスグル"}]}
+
+
+def test_kana_floor_is_a_param_and_zero_disables_the_lookup():
+    words = [[{"lemma": "ばかり", "reading": "バカリ"}]]
+    matched = [{"lemma": "ばかり", "reading": "バカリ"}]
+
+    # A lower floor keeps a word the default (2000) would have dropped.
+    client = _client(words, matched, frequencies=[{"rank": 296}])
+    out = GenerateVocabOperation().generate(
+        client, [{"sentence": "ばかり"}], {"min_kana_rank": "100"}
+    )
+    assert out == [matched]
+
+    # 0 turns the filter off entirely - no frequency call at all.
+    client = _client(words, matched, frequencies=[{"rank": 296}])
+    out = GenerateVocabOperation().generate(
+        client, [{"sentence": "ばかり"}], {"min_kana_rank": "0"}
+    )
+    assert out == [matched]
+    assert [c[0] for c in client.calls] == [
+        "/v1/text/content-words",
+        "/v1/vocab/filter-by-status",
+    ]
+
+
+def test_blank_or_junk_floor_falls_back_to_the_default():
+    for value in ("", "   ", "not-a-number"):
+        client = _client(
+            [[{"lemma": "ばかり", "reading": "バカリ"}]],
+            [{"lemma": "ばかり", "reading": "バカリ"}],
+            frequencies=[{"rank": 296}],
+        )
+        out = GenerateVocabOperation().generate(
+            client, [{"sentence": "ばかり"}], {"min_kana_rank": value}
+        )
+        assert out == [[]], value
+
+
+def test_no_kana_survivors_skips_the_frequency_call():
+    client = _client(
+        [[{"lemma": "猫", "reading": "ネコ"}]],
+        [{"lemma": "猫", "reading": "ネコ"}],
+    )
+    GenerateVocabOperation().generate(client, [{"sentence": "猫だ"}])
+    assert [c[0] for c in client.calls] == [
+        "/v1/text/content-words",
+        "/v1/vocab/filter-by-status",
+    ]
