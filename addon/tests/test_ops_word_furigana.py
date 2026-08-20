@@ -42,4 +42,33 @@ def test_compute_sends_texts_and_encodes_results():
     client = _FakeClient({"results": [{"segments": [_seg("主役", "しゅやく")]}, {"segments": []}]})
     out = WordFuriganaOperation().compute(client, [{"word": "主役"}, {"word": "zzz"}])
     assert out == ["主役[しゅやく]", None]
+    # No note carries a reading -> no `readings` key, so the request stays
+    # byte-identical to the word-reading op's (shared `post_pure` entry).
     assert client.calls == [("/v1/text/furigana", {"texts": ["主役", "zzz"]})]
+
+
+def test_compute_sends_the_card_reading_as_an_override():
+    client = _FakeClient({"results": [{"segments": [_seg("鍛冶", "かじ")]}]})
+    out = WordFuriganaOperation().compute(client, [{"word": "鍛冶", "word-reading": "かじ"}])
+    assert out == ["鍛冶[かじ]"]
+    assert client.calls == [("/v1/text/furigana", {"texts": ["鍛冶"], "readings": ["かじ"]})]
+
+
+def test_compute_strips_markup_from_the_reading_and_pads_the_unenriched():
+    # One enriched note is enough to send `readings`; a note without one sends "",
+    # which leaves the backend on its own tokenizer reading.
+    client = _FakeClient({"results": [{"segments": []}, {"segments": []}]})
+    WordFuriganaOperation().compute(
+        client, [{"word": "鍛冶", "word-reading": "<b>かじ</b> "}, {"word": "水"}]
+    )
+    assert client.calls == [
+        ("/v1/text/furigana", {"texts": ["鍛冶", "水"], "readings": ["かじ", ""]})
+    ]
+
+
+def test_reading_is_optional_so_an_unenriched_card_still_applies():
+    op = WordFuriganaOperation()
+    assert op.applicable({"word": "鍛冶"})
+    spec = op.io_spec()
+    assert spec.required_inputs == ("word",)
+    assert spec.optional_inputs == ("word-reading",)

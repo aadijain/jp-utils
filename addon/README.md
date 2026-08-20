@@ -29,7 +29,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | Operation | Label | Reads | Writes / effect |
 |---|---|---|---|
 | `word-reading` | Fetch word reading | `word` | `word-reading` |
-| `word-furigana` | Add word furigana | `word` | `word-furigana` |
+| `word-furigana` | Add word furigana | `word` (required), `word-reading` (optional) | `word-furigana` (the reading, when the card has one, picks the right kanji segmentation) |
 | `sentence-furigana` | Add sentence furigana | `sentence` | `sentence-furigana` (HTML-aware) |
 | `highlight` | Highlight word in sentence | `word`, `sentence` | `sentence` (wraps the word in `<b>` in place; inflection-aware, preserves furigana) |
 | `word-definition` | Fetch definition | `word` | `word-meaning` (sense-aware; format/POS/examples/readings toggles) |

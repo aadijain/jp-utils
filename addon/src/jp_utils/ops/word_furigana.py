@@ -6,10 +6,23 @@ backend returns per-word segments (kanji runs carry a reading, kana runs don't);
 :func:`to_anki_ruby` renders them into the ``base[reading]`` form Anki's
 ``{{furigana:}}`` / ``{{kanji:}}`` filters parse. A word with no segments is left
 unchanged.
+
+The card's ``word-reading`` is sent along as the backend's per-text reading
+override, so the ruby agrees with the reading field the rest of the word pipeline
+uses. Without it the backend picks the curated JmdictFurigana row by the
+tokenizer's CONTEXT-FREE reading, which is the wrong one for a jukujikun or a
+variant-unified word (鍛冶 -> タンヤ, 十分 -> ジュウフン). The input is OPTIONAL:
+a card not yet enriched with a reading must still get ruby, exactly as
+``sync-word-status`` treats it. Note the reading a note carries is the one it had
+when the sweep STARTED - a ``word-reading`` computed by an earlier op in the same
+run is not visible here (:func:`jp_utils.ops.base.plan_operations` plans every op
+off the same note snapshot); generated word cards are seeded with their reading
+at creation, so they enrich correctly on the next sweep.
 """
 
 from ..client import BackendClient
 from .base import FieldOperation
+from .nplus1 import strip_markup
 
 
 def to_anki_ruby(segments: list[dict]) -> str:
@@ -42,15 +55,25 @@ class WordFuriganaOperation(FieldOperation):
         "writes it to its own field. Uses the reading, when mapped, to pick the "
         "correct kanji segmentation."
     )
+    # `word` -> the text to annotate (REQUIRED). `word-reading` -> the reading the
+    # ruby must agree with, OPTIONAL: sent when present, else the backend falls
+    # back to the tokenizer's reading (a card not yet enriched with one).
     input_aliases = ("word",)
+    optional_input_aliases = ("word-reading",)
     output_alias = "word-furigana"
 
     def compute(
         self, client: BackendClient, sources: list[dict[str, str]], params: dict | None = None
     ) -> list[str | None]:
-        # post_pure: the reading and furigana ops send the identical request when both
-        # are in a pipeline, and this endpoint is a pure lookup.
-        resp = client.post_pure("/v1/text/furigana", {"texts": [s["word"] for s in sources]})
+        body: dict = {"texts": [s["word"] for s in sources]}
+        readings = [strip_markup(s.get("word-reading", "")).strip() for s in sources]
+        # Omit the key entirely when no note has a reading: the request is then
+        # byte-identical to the word-reading op's, which `post_pure` dedups.
+        if any(readings):
+            body["readings"] = readings
+        # post_pure: this endpoint is a pure lookup (and the reading op sends the
+        # same request when neither has a reading to override with).
+        resp = client.post_pure("/v1/text/furigana", body)
         results = resp.get("results", [])
         out: list[str | None] = [None] * len(sources)
         for i, result in enumerate(results[: len(sources)]):
