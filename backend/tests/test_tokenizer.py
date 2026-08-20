@@ -23,3 +23,18 @@ def test_tokenizer_split_mode_changes_granularity(tokenizer: Tokenizer) -> None:
     a = tokenizer.tokenize("選挙管理委員会", SplitMode.A)
     c = tokenizer.tokenize("選挙管理委員会", SplitMode.C)
     assert len(a) > len(c)
+
+
+def test_reading_of_concatenates_morpheme_readings(tokenizer: Tokenizer) -> None:
+    assert tokenizer.reading_of("記憶喪失") == "キオクソウシツ"
+    assert tokenizer.reading_of("") == ""
+
+
+def test_reading_of_is_memoized(tokenizer: Tokenizer) -> None:
+    # A sweep re-derives the same lemmas' readings over and over (~5x), so the
+    # re-tokenization behind them is cached.
+    tokenizer.reading_of.cache_clear()
+    tokenizer.reading_of("食べる")
+    tokenizer.reading_of("食べる")
+    info = tokenizer.reading_of.cache_info()
+    assert (info.hits, info.misses) == (1, 1)

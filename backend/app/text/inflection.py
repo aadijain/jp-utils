@@ -154,10 +154,7 @@ def lemma_reading(tokenizer: Tokenizer, surface: str, surface_reading: str, lemm
     """
     if lemma == surface:
         return surface_reading
-    lemma_tokens = tokenizer.tokenize(lemma)
-    if lemma_tokens:
-        return "".join(token.reading for token in lemma_tokens)
-    return surface_reading
+    return tokenizer.reading_of(lemma) or surface_reading
 
 
 def deinflect(tokenizer: Tokenizer, tokens: Sequence[Token]) -> tuple[str, str, str]:
