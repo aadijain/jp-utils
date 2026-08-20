@@ -75,6 +75,12 @@ class FuriganaText:
 class FuriganaRequest:
     texts: list[str]  # batch-first
     mode: SplitMode = SplitMode.C
+    # Per-text reading override (hira or kata), aligned with `texts`; "" = none.
+    # Honoured only when the text is a SINGLE token spanning all of it - a lone
+    # word whose caller already knows its reading (an Anki `word-reading` field)
+    # and must not be re-guessed from the tokenizer's context-free reading.
+    # Either empty, or exactly as long as `texts`.
+    readings: list[str] = field(default_factory=list)
 
 
 @dataclass
