@@ -4,12 +4,13 @@ from fastapi.testclient import TestClient
 
 from app.dicts import DictCache
 from app.text.meaning import lookup_meaning
+from app.text.tokenizer import Tokenizer
 from shared.text import MeaningQuery
 
 
-def test_lookup_meaning_returns_entries(built_cache: Path) -> None:
+def test_lookup_meaning_returns_entries(tokenizer: Tokenizer, built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
-    result = lookup_meaning(cache, MeaningQuery(lemma="食べる"))
+    result = lookup_meaning(tokenizer, cache, MeaningQuery(lemma="食べる"))
     senses = result.entries[0].senses
     assert [s.glosses for s in senses] == [["to eat"], ["to live on", "to subsist"]]
     assert senses[0].pos == ["1-dan", "transitive"]
@@ -28,16 +29,51 @@ def test_lookup_meaning_returns_entries(built_cache: Path) -> None:
     assert result.all_readings == ["たべる"]
 
 
-def test_lookup_meaning_reading_filter_normalizes_kana(built_cache: Path) -> None:
+def test_lookup_meaning_reading_filter_normalizes_kana(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
     cache = DictCache.open(built_cache)
     # katakana reading still matches the hiragana headword reading
-    assert lookup_meaning(cache, MeaningQuery(lemma="食べる", reading="タベル")).entries
-    assert not lookup_meaning(cache, MeaningQuery(lemma="食べる", reading="ちがう")).entries
+    assert lookup_meaning(tokenizer, cache, MeaningQuery(lemma="食べる", reading="タベル")).entries
+    assert not lookup_meaning(
+        tokenizer, cache, MeaningQuery(lemma="食べる", reading="ちがう")
+    ).entries
 
 
-def test_lookup_meaning_not_found(built_cache: Path) -> None:
+def test_lookup_meaning_falls_back_to_the_deinflected_lemma(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
     cache = DictCache.open(built_cache)
-    assert lookup_meaning(cache, MeaningQuery(lemma="存在しない")).entries == []
+    # 食べた is not a headword; its lemma is, and the result echoes the key that answered.
+    result = lookup_meaning(tokenizer, cache, MeaningQuery(lemma="食べた"))
+    assert (result.lemma, result.reading) == ("食べる", "たべる")
+    assert result.entries[0].senses[0].glosses == ["to eat"]
+
+
+def test_lookup_meaning_keeps_a_lemma_that_is_already_a_headword(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    # The lemma answers as written, so nothing is deinflected out from under it.
+    result = lookup_meaning(tokenizer, cache, MeaningQuery(lemma="人", reading="ひと"))
+    assert (result.lemma, result.reading) == ("人", "ひと")
+    assert result.entries[0].senses[0].glosses == ["person"]
+
+
+def test_lookup_meaning_miss_echoes_the_query_and_keeps_its_readings(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    # 人 has entries but none under this reading, and deinflecting a headword is a
+    # no-op - so the query is echoed, with the readings it does have.
+    result = lookup_meaning(tokenizer, cache, MeaningQuery(lemma="人", reading="ちがう"))
+    assert (result.lemma, result.reading, result.entries) == ("人", "ちがう", [])
+    assert result.all_readings == ["ひと"]
+
+
+def test_lookup_meaning_not_found(tokenizer: Tokenizer, built_cache: Path) -> None:
+    cache = DictCache.open(built_cache)
+    assert lookup_meaning(tokenizer, cache, MeaningQuery(lemma="存在しない")).entries == []
 
 
 def test_meaning_endpoint(text_client_with_dicts: TestClient, auth_headers: dict[str, str]) -> None:

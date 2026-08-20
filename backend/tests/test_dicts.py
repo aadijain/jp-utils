@@ -92,7 +92,7 @@ def test_parse_jpdb_freq_marks_kana_form(synthetic_dicts: Path) -> None:
     assert {(r.term, r.reading) for r in kana} == {("みず", "みず"), ("水", "みず")}
     # kanji rows carry their own reading, threaded through from the JPDB entry.
     kanji = {(r.term, r.reading): r.rank for r in rows if not r.is_kana_form}
-    assert kanji == {("水", "みず"): 500, ("水", "すい"): 800}
+    assert kanji == {("水", "みず"): 500, ("水", "すい"): 800, ("食べる", "たべる"): 700}
 
 
 def test_parse_furigana_keeps_full_segmentation(synthetic_dicts: Path) -> None:
@@ -110,6 +110,7 @@ def test_parse_pitch_yields_one_row_per_position(synthetic_dicts: Path) -> None:
         ("人", "ひと", 0),
         ("人", "ひと", 2),
         ("人", "にん", 1),
+        ("食べる", "たべる", 2),
     }
 
 
@@ -121,9 +122,9 @@ def test_build_cache_reports_entries(built_cache: Path) -> None:
     assert cache is not None
     status = {s.name: s for s in cache.status()}
     assert status["meanings"].entries == 3  # 食べる, 水, 人/ひと (low-score readings dropped)
-    assert status["frequencies"].entries == 3  # (水,みず), (水,すい), (みず,みず)
+    assert status["frequencies"].entries == 4  # (水,みず), (水,すい), (みず,みず), (食べる,たべる)
     assert status["furigana"].entries == 3
-    assert status["pitches"].entries == 4  # (水,みず,0), (人,ひと,0), (人,ひと,2), (人,にん,1)
+    assert status["pitches"].entries == 5  # 水/みず, 人/ひと x2, 人/にん, 食べる/たべる
     assert all(s.loaded for s in status.values())
 
 

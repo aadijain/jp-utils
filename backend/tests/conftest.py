@@ -137,6 +137,8 @@ _JPDB_ROWS = [
     # 水/みず also has a kana-spelling rank (㋕); the kanji-form 500 is preferred.
     ["水", "freq", {"reading": "みず", "frequency": {"value": 2100, "displayValue": "2100㋕"}}],
     ["みず", "freq", {"value": 1500, "displayValue": "1500㋕"}],  # kana form
+    # A verb, so an inflected surface has a lemma to fall back to.
+    ["食べる", "freq", {"reading": "たべる", "frequency": {"value": 700}}],
 ]
 
 _PITCH_ROWS = [
@@ -145,6 +147,8 @@ _PITCH_ROWS = [
     # 人 is a homograph: ひと carries two accepted accents, にん a different one.
     ["人", "pitch", {"reading": "ひと", "pitches": [{"position": 0}, {"position": 2}]}],
     ["人", "pitch", {"reading": "にん", "pitches": [{"position": 1}]}],
+    # A verb, so an inflected surface has a lemma to fall back to.
+    ["食べる", "pitch", {"reading": "たべる", "pitches": [{"position": 2}]}],
     # A non-pitch meta row in the same bank must be ignored.
     ["水", "freq", {"value": 500}],
 ]

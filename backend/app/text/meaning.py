@@ -8,10 +8,18 @@ input (e.g. the tokenizer's reading) and katakana headwords (loanwords) both
 match. ``all_readings`` always lists every distinct reading of the lemma (from
 the unfiltered rows), so a consumer can render an "all readings" line without a
 second lookup.
+
+The lemma is looked up **as written first** - a surface that is already a
+headword is the right entry, and going through the deinflected form
+unconditionally would flatten homograph readings. Only a miss is retried against
+the deinflected key, so an inflected word field still gets a definition. The
+result echoes whichever key answered.
 """
 
 from app.dicts import DictCache
 from app.text.convert import kata_to_hira
+from app.text.normalize import deinflected_key
+from app.text.tokenizer import Tokenizer
 from shared.text import (
     ExampleSegment,
     MeaningEntry,
@@ -45,11 +53,14 @@ def _to_sense(sense: dict) -> MeaningSense:
     )
 
 
-def lookup_meaning(cache: DictCache, query: MeaningQuery) -> MeaningResult:
-    rows = cache.lookup_meaning(query.lemma)
+def _entries(
+    cache: DictCache, lemma: str, reading: str | None
+) -> tuple[list[MeaningEntry], list[str]]:
+    """One lemma's entries (reading-filtered) plus every reading it has (unfiltered)."""
+    rows = cache.lookup_meaning(lemma)
     all_readings = list(dict.fromkeys(row["reading"] for row in rows if row["reading"]))
-    if query.reading:
-        target = kata_to_hira(query.reading)
+    if reading:
+        target = kata_to_hira(reading)
         rows = [row for row in rows if kata_to_hira(row["reading"]) == target]
     entries = [
         MeaningEntry(
@@ -59,6 +70,24 @@ def lookup_meaning(cache: DictCache, query: MeaningQuery) -> MeaningResult:
         )
         for row in rows
     ]
+    return entries, all_readings
+
+
+def lookup_meaning(tokenizer: Tokenizer, cache: DictCache, query: MeaningQuery) -> MeaningResult:
+    entries, all_readings = _entries(cache, query.lemma, query.reading)
+    if entries:
+        return MeaningResult(
+            lemma=query.lemma, reading=query.reading, entries=entries, all_readings=all_readings
+        )
+    key = deinflected_key(tokenizer, query.lemma)
+    if key is not None:
+        alt_entries, alt_readings = _entries(cache, key[0], key[1])
+        if alt_entries:
+            return MeaningResult(
+                lemma=key[0], reading=key[1], entries=alt_entries, all_readings=alt_readings
+            )
+    # No entry either way: the unfiltered readings of the lemma as asked for still
+    # answer "what readings does this have", so they are not dropped.
     return MeaningResult(
-        lemma=query.lemma, reading=query.reading, entries=entries, all_readings=all_readings
+        lemma=query.lemma, reading=query.reading, entries=[], all_readings=all_readings
     )

@@ -109,31 +109,46 @@ def convert_text(req: ConvertRequest) -> ConvertResponse:
 @router.post("/meaning")
 def meaning(
     req: MeaningRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
     cache: DictCache = Depends(require_dict_cache),
 ) -> MeaningResponse:
-    """Look up dictionary meanings for a batch of words. Aligned with `req.queries`."""
+    """Look up dictionary meanings for a batch of words. Aligned with `req.queries`.
+
+    A query that misses as written is retried against its deinflected lemma
+    (with that lemma's own reading), so an inflected word field still resolves.
+    """
     check_batch(req.queries, "queries")
-    return MeaningResponse(results=[lookup_meaning(cache, q) for q in req.queries])
+    return MeaningResponse(results=[lookup_meaning(tokenizer, cache, q) for q in req.queries])
 
 
 @router.post("/frequency")
 def frequency(
     req: FrequencyRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
     cache: DictCache = Depends(require_dict_cache),
 ) -> FrequencyResponse:
-    """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`."""
+    """Look up JPDB frequency ranks for a batch of words. Aligned with `req.queries`.
+
+    A query that misses as written is retried against its deinflected lemma
+    (with that lemma's own reading), so an inflected word field still resolves.
+    """
     check_batch(req.queries, "queries")
-    return FrequencyResponse(results=[lookup_frequency(cache, q) for q in req.queries])
+    return FrequencyResponse(results=[lookup_frequency(tokenizer, cache, q) for q in req.queries])
 
 
 @router.post("/pitch")
 def pitch(
     req: PitchRequest,
+    tokenizer: Tokenizer = Depends(get_tokenizer),
     cache: DictCache = Depends(require_dict_cache),
 ) -> PitchResponse:
-    """Look up pitch-accent positions + categories for a batch. Aligned with `req.queries`."""
+    """Look up pitch-accent positions + categories for a batch. Aligned with `req.queries`.
+
+    A query that misses as written is retried against its deinflected lemma
+    (with that lemma's own reading), so an inflected word field still resolves.
+    """
     check_batch(req.queries, "queries")
-    return PitchResponse(results=[lookup_pitch(cache, q) for q in req.queries])
+    return PitchResponse(results=[lookup_pitch(tokenizer, cache, q) for q in req.queries])
 
 
 @router.post("/content-words")
