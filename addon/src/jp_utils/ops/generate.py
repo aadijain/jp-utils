@@ -129,6 +129,41 @@ class GenerateVocabOperation(GenerateOperation):
     input_aliases = ("sentence",)  # the field tokenized for content words
     params_spec = (TARGET_DECK, TARGET_NOTE_TYPE, ON_EXISTING, COPY_ALIASES, MIN_KANA_RANK)
 
+    def target_problems(self, params: dict | None, note_types: dict) -> list[str]:
+        """Why this step can't create cards: an unset or unmapped target.
+
+        The runner refuses to create stray notes when the target is misconfigured
+        (``ui/run.py:_apply_generation`` skips the whole target), and nothing else
+        validates it - the pipeline's own alias checks only cover the note type the
+        pipeline runs on, never the deck the cards land in. So a target left blank
+        used to look perfectly healthy and quietly generate nothing.
+
+        Only the TARGET note type is checked for ``word`` + ``word-reading``: the op
+        seeds both onto every new card and they are the two halves of the dedup key.
+        The source note type needs neither - the words come from tokenizing its
+        ``sentence`` field, and the seeds are never copied context anyway (see
+        :func:`jp_utils.generation.context_aliases`).
+        """
+        params = params or {}
+        deck = str(params.get("target_deck", "")).strip()
+        target_type = str(params.get("target_note_type", "")).strip()
+        problems = []
+        if not deck:
+            problems.append(f"{self.key}: set a target word deck in the operation's options.")
+        if not target_type:
+            problems.append(f"{self.key}: set a target note type in the operation's options.")
+            return problems
+        mapping = note_types.get(target_type)
+        if mapping is None:
+            problems.append(f"{self.key}: target note type '{target_type}' has no field mapping.")
+            return problems
+        missing = [alias for alias in SEED_ALIASES if not mapping.get(alias)]
+        if missing:
+            problems.append(
+                f"{self.key}: '{target_type}' has no field mapped for {', '.join(missing)}."
+            )
+        return problems
+
     def generate(
         self,
         client: BackendClient,

@@ -320,14 +320,32 @@ def step_unmapped_aliases(
     return [alias for alias in (*required_inputs, *outputs) if alias not in mapped]
 
 
+def step_target_problems(step: PipelineStep, note_types: dict, operations) -> list[str]:
+    """Problems a step reports about its own PARAMS (see ``Operation.target_problems``).
+
+    The alias checks above cover the note type the pipeline runs on; an op that
+    writes somewhere else - the generate op's target deck - answers for that side
+    itself. An unregistered op, or one without the hook, contributes nothing.
+    """
+    op = next((o for o in operations if o.key == step.op), None)
+    hook = getattr(op, "target_problems", None)
+    if not callable(hook):
+        return []
+    params = {spec.key: spec.default for spec in getattr(op, "params_spec", ())}
+    params.update(step.params or {})
+    problems: Any = hook(params, note_types)
+    return [str(problem) for problem in problems]
+
+
 def pipeline_problems(
     pipeline: Pipeline, all_pipelines: list[Pipeline], note_types: dict, operations
 ) -> list[str]:
     """Human-readable reasons a pipeline isn't valid/runnable (empty = valid).
 
     Checks, in order: a deck is set, a note type is set, the ``(deck, note_type)``
-    pair is unique across ``all_pipelines``, and every alias the pipeline's ops
-    read/write is mapped for the note type. ``operations`` is the op registry
+    pair is unique across ``all_pipelines``, every alias the pipeline's ops
+    read/write is mapped for the note type, and whatever each step says about its
+    own params (:func:`step_target_problems`). ``operations`` is the op registry
     (see :func:`step_unmapped_aliases`).
     """
     problems: list[str] = []
@@ -356,6 +374,8 @@ def pipeline_problems(
         )
         if unmapped:
             problems.append(f"Unmapped fields for this note type: {', '.join(unmapped)}.")
+    for step in pipeline.steps:
+        problems.extend(step_target_problems(step, note_types, operations))
     return problems
 
 

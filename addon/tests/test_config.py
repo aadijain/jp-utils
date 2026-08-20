@@ -7,6 +7,7 @@ from jp_utils.config import (
     find_pipeline,
     pipeline_problems,
     pipelines_for_trigger,
+    step_target_problems,
     step_unmapped_aliases,
 )
 
@@ -207,3 +208,65 @@ def test_step_unmapped_aliases_ignores_output_for_ops_without_one() -> None:
     assert step_unmapped_aliases(step, note_types, "Lapis", ops) == []
     # Input unmapped is still reported.
     assert step_unmapped_aliases(step, {}, "Lapis", ops) == ["frequency"]
+
+
+# ── generate-vocab target validation ────────────────────────────────────────────
+_GEN_NOTE_TYPES = {
+    "Sentence": {"sentence": "Sentence", "word": "Word", "word-reading": "WordReading"},
+    "Lapis": {"word": "Expression", "word-reading": "Reading"},
+}
+
+
+def _gen_ops():
+    """The real generate op (the validation is its own), plus a plain duck-typed op."""
+    from jp_utils.ops.generate import GenerateVocabOperation
+
+    return [GenerateVocabOperation(), *_OPS]
+
+
+def _gen_step(**params):
+    defaults = {"target_deck": "Word", "target_note_type": "Lapis"}
+    return PipelineStep("generate-vocab", {**defaults, **params})
+
+
+def test_generate_target_problems_none_when_fully_configured() -> None:
+    assert step_target_problems(_gen_step(), _GEN_NOTE_TYPES, _gen_ops()) == []
+
+
+def test_generate_target_problems_flag_unset_target() -> None:
+    step = _gen_step(target_deck="", target_note_type="")
+    problems = step_target_problems(step, _GEN_NOTE_TYPES, _gen_ops())
+    assert any("target word deck" in m for m in problems)
+    assert any("target note type" in m for m in problems)
+
+
+def test_generate_target_problems_flag_unmapped_target_note_type() -> None:
+    step = _gen_step(target_note_type="Ghost")
+    problems = step_target_problems(step, _GEN_NOTE_TYPES, _gen_ops())
+    assert any("no field mapping" in m for m in problems)
+
+
+def test_generate_target_problems_flag_missing_seed_fields_on_the_target() -> None:
+    # word-reading unmapped on the TARGET: the seed and half the dedup key are lost.
+    note_types = {**_GEN_NOTE_TYPES, "Lapis": {"word": "Expression"}}
+    problems = step_target_problems(_gen_step(), note_types, _gen_ops())
+    assert any("'Lapis'" in m and "word-reading" in m for m in problems)
+
+
+def test_generate_target_problems_ignore_the_source_note_type() -> None:
+    # The sentence note type needs neither seed: the words are tokenized out of its
+    # `sentence` field, and seeds are never copied context. Flagging it was a false alarm.
+    note_types = {**_GEN_NOTE_TYPES, "Sentence": {"sentence": "Sentence"}}
+    assert step_target_problems(_gen_step(), note_types, _gen_ops()) == []
+
+
+def test_generate_target_problems_reach_pipeline_problems() -> None:
+    pipeline = Pipeline(deck="Mining", note_type="Sentence", steps=[_gen_step(target_deck="")])
+    problems = pipeline_problems(pipeline, [pipeline], _GEN_NOTE_TYPES, _gen_ops())
+    assert any("target word deck" in m for m in problems)
+
+
+def test_step_target_problems_ignores_ops_without_the_hook() -> None:
+    # The duck-typed test ops have no target_problems; they must contribute nothing.
+    assert step_target_problems(PipelineStep("word-reading"), _NOTE_TYPES, _OPS) == []
+    assert step_target_problems(PipelineStep("ghost"), _NOTE_TYPES, _OPS) == []
