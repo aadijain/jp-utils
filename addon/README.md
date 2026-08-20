@@ -38,7 +38,7 @@ The build script is stdlib-only and runs with bare `python`. Install the built `
 | `pitch` | Fetch pitch accent | `word`, `word-reading` | `pitch` (downstep position(s); Lapis renders + colors from it) |
 | `nplus1-sequence` | Assign n+1 sequence | `sentence` | `rank` (n+1 order over the whole batch; the `algorithm` param picks `greedy` or `fuzzy`) |
 | `int-sort` | Sort by rank | `rank` (configurable field) | reorders the deck's new cards |
-| `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you |
+| `generate-vocab` | Generate vocab cards | `sentence` | creates new vocab notes for words new to you; when a card for the word already exists, `on_existing` chooses `skip` (default), `overwrite` (refresh its seeded + copied fields), `fill` (write only the fields still empty, so hand edits survive) or `duplicate` |
 | `sync-word-status` | Sync word status to vocab store | `word` (required), `word-reading` (optional) | records each word's status in the vocab store (new card -> `seen`, reviewed/suspended -> `learnt`); a card tagged `jp::learnt` / `jp::ignored` / `jp::blacklisted` instead forces that status, overriding its card state; writes no field |
 | `ai-translate` | Translate sentence via AI queue | `sentence` (required), `sentence-meaning` (optional context) | on notes tagged `jp::translate`: writes a finished AI translation to `sentence-meaning` and its learner notes to `notes`, archives the replaced text into `misc-info` as a `Raw:` line (toggleable), and removes the tag; a sentence not translated yet is queued on the backend and stays tagged for a later run |
 | `set-field` | Set field | none (reads no field) | the `target` field, set to a fixed `value` (any string; empty value clears the field; local-only, no backend call) |
@@ -88,6 +88,8 @@ The operations compose into a single-user study loop:
 8. `sync-word-status` writes each Word card's state back to the vocab store as you study: a new card marks its word `seen`, a reviewed or suspended card marks it `learnt`. Tagging a card `jp::learnt`, `jp::ignored`, or `jp::blacklisted` forces that status regardless of the card's state.
 
 Because `generate-vocab` only creates cards for words still `unknown` or `seen`, a word already `learnt` (or one that already has a card) is never regenerated - the vocab store is the shared known-set both ops read and write.
+
+A card that *does* already exist is left alone unless its step says otherwise: use `on_existing: fill` to top up a half-populated card (an empty sentence field gets the mined context, an edited one is never touched) and `overwrite` only when the source note should win outright.
 
 ## Development
 

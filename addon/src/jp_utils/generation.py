@@ -2,9 +2,9 @@
 
 The generate op produces new words in the background; the runner creates the notes
 on the UI thread. The pure decisions sit in between - which context fields to copy
-from the source sentence onto the new word note, and what counts as "the same word"
-when deduping against the target deck - and they live here so they can be
-unit-tested without Anki.
+from the source sentence onto the new word note, what counts as "the same word"
+when deduping against the target deck, and whether a given field is the runner's to
+write - and they live here so they can be unit-tested without Anki.
 """
 
 from .ops.generate import SEED_ALIASES
@@ -44,3 +44,21 @@ def word_key(word: str, reading: str) -> tuple[str, str]:
     sides are normalized through :func:`~jp_utils.ops.nplus1.strip_markup` here.
     """
     return (strip_markup(word).strip(), strip_markup(reading).strip())
+
+
+def should_write(current: str, value: str, only_if_empty: bool) -> bool:
+    """Whether the runner writes ``value`` over what a field holds today.
+
+    Two rules, in order. A value identical to the current one is never a write, so a
+    re-run of the same generation changes nothing (this is what makes the edit log
+    and the "updated N notes" count honest). Then ``only_if_empty`` - the
+    ``on_existing: fill`` mode - refuses any field that already has content, so a
+    hand-edited sentence survives a re-run instead of being refreshed away.
+
+    "Empty" is plain falsiness of the stored field, matching the ``only_if_empty``
+    every other op shares. A field holding stray markup (``<br>``) counts as
+    non-empty and is left alone; `fill` never merges two values, it only populates.
+    """
+    if current == value:
+        return False
+    return not (only_if_empty and current)
