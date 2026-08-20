@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.dicts import DictCache
 from app.text.pitch import _category, _mora_count, lookup_pitch
+from app.text.tokenizer import Tokenizer
 from shared.text import PitchQuery
 
 
@@ -23,31 +24,53 @@ def test_category_from_position_and_mora() -> None:
     assert _category(1, 1) == "atamadaka"  # 1-mora accented word
 
 
-def test_lookup_pitch_disambiguates_homograph_by_reading(built_cache: Path) -> None:
+def test_lookup_pitch_disambiguates_homograph_by_reading(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
     # 人/ひと carries two accents (0 heiban, 2 -> odaka since ひと is 2 morae).
-    result = lookup_pitch(cache, PitchQuery(term="人", reading="ひと"))
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="人", reading="ひと"))
     assert result.positions == [0, 2]
     assert result.categories == ["heiban", "odaka"]
     # にん (2 morae) with position 1 -> atamadaka.
-    result = lookup_pitch(cache, PitchQuery(term="人", reading="にん"))
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="人", reading="にん"))
     assert result.positions == [1]
     assert result.categories == ["atamadaka"]
 
 
-def test_lookup_pitch_normalizes_katakana_reading(built_cache: Path) -> None:
+def test_lookup_pitch_normalizes_katakana_reading(tokenizer: Tokenizer, built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
-    result = lookup_pitch(cache, PitchQuery(term="水", reading="ミズ"))
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="水", reading="ミズ"))
     assert result.positions == [0]
     assert result.categories == ["heiban"]
 
 
-def test_lookup_pitch_not_found(built_cache: Path) -> None:
+def test_lookup_pitch_falls_back_to_the_deinflected_term(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    # 食べた has no accent as written; the lemma does, and the category is computed
+    # from the lemma's reading (たべる, 3 morae, drop at 2 -> nakadaka).
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="食べた"))
+    assert (result.term, result.reading, result.positions) == ("食べる", "たべる", [2])
+    assert result.categories == ["nakadaka"]
+
+
+def test_lookup_pitch_keeps_a_surface_that_already_has_an_accent(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    # The surface answers, so the homograph reading is not replaced.
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="人", reading="にん"))
+    assert (result.term, result.reading, result.positions) == ("人", "にん", [1])
+
+
+def test_lookup_pitch_not_found(tokenizer: Tokenizer, built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
-    result = lookup_pitch(cache, PitchQuery(term="存在しない", reading="そんざい"))
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="存在しない", reading="そんざい"))
     assert result.positions == []
     assert result.categories == []
 

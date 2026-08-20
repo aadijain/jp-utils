@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.text.normalize import normalize
+from app.text.normalize import deinflected_key, normalize
 from app.text.tokenizer import Tokenizer
 
 
@@ -65,6 +65,24 @@ def test_normalize_empty(tokenizer: Tokenizer) -> None:
     assert result.lemma == ""
     assert result.reading == ""
     assert not result.covered
+
+
+def test_deinflected_key_is_the_retry_key_for_an_inflected_surface(
+    tokenizer: Tokenizer,
+) -> None:
+    # The reading comes from the same analysis as the lemma: せめ describes 攻め,
+    # which the lemma no longer is.
+    assert deinflected_key(tokenizer, "食べた") == ("食べる", "たべる")
+    assert deinflected_key(tokenizer, "攻め") == ("攻める", "せめる")
+
+
+def test_deinflected_key_is_none_when_there_is_nothing_new_to_try(tokenizer: Tokenizer) -> None:
+    assert deinflected_key(tokenizer, "猫") is None  # already its own lemma
+    assert deinflected_key(tokenizer, " 猫 ") is None  # ...whitespace and all
+    assert deinflected_key(tokenizer, "上等") is None  # a compound is folded, not truncated
+    assert deinflected_key(tokenizer, "。") is None  # no word head at all
+    assert deinflected_key(tokenizer, "だます") is None  # a misparse is not a retry key
+    assert deinflected_key(tokenizer, "   ") is None
 
 
 def test_normalize_endpoint(text_client: TestClient, auth_headers: dict[str, str]) -> None:

@@ -26,6 +26,8 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /locate` | Find a word in a sentence by its dictionary form (inflection-aware, and across a word the tokenizer splits), returning the sentence split into segments with the match flagged. The flagged slice covers the word's own conjugation and stops where the next word starts - used to highlight the mined word |
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
+`/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword. Each result echoes whichever key answered.
+
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
 
 ## Vocab store (`/v1/vocab/*`)
