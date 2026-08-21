@@ -5,10 +5,39 @@ on:
   pull_request:
 
 jobs:
-  green:
+  # Every commit must be green on its own, not just the branch tip, so each commit
+  # this event introduces gets its own leg below. History is never revisited.
+  list:
     runs-on: ubuntu-latest
+    outputs:
+      commits: ${{ steps.range.outputs.commits }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: range
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          # A new branch, or a force-push whose old tip is gone: fall back to what
+          # this branch adds on top of main.
+          git cat-file -e "$base^{commit}" 2>/dev/null || base="$(git merge-base origin/main HEAD)"
+          git rev-list --reverse --no-merges "$base..HEAD" > commits.txt
+          echo "commits=$(jq -R . < commits.txt | jq -sc .)" >> "$GITHUB_OUTPUT"
+          nl commits.txt
+
+  green:
+    needs: list
+    if: needs.list.outputs.commits != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true      # stop at the first red commit
+      max-parallel: 1      # sequential; raise to check commits concurrently
+      matrix:
+        commit: ${{ fromJson(needs.list.outputs.commits) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.commit }}
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Sync
