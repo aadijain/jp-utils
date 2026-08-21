@@ -84,3 +84,59 @@ def test_batch_extraction_touches_the_cache_once(tokenizer, tmp_path) -> None:
     assert len(gets) == 1 and len(gets[0]) == 3  # one read for the whole batch
     assert len(puts) == 1 and len(puts[0]) == 2  # one write, deduped by content hash
     cache.close()
+
+
+def test_entries_survive_a_reopen_at_the_same_version(tmp_path: Path) -> None:
+    """The stamp must not cost a rebuild on every restart."""
+    path = tmp_path / "tok.db"
+    h = sentence_hash("同版")
+    first = TokenizationCache.open(path)
+    first.put_many([(h, [VocabWord(lemma="同版", reading="どうはん")])])
+    first.close()
+
+    reopened = TokenizationCache.open(path)
+    assert reopened.get_many([h]) != {}
+    reopened.close()
+
+
+def test_entries_from_another_extraction_version_are_discarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rule change (signalled by a version bump) must invalidate every entry."""
+    path = tmp_path / "tok.db"
+    h = sentence_hash("テスト")
+    first = TokenizationCache.open(path)
+    first.put_many([(h, [VocabWord(lemma="テスト", reading="てすと")])])
+    first.close()
+
+    monkeypatch.setattr(tokenization, "EXTRACTION_VERSION", tokenization.EXTRACTION_VERSION + 1)
+    reopened = TokenizationCache.open(path)
+    assert reopened.get_many([h]) == {}
+    reopened.close()
+
+    # ...and the new version is stamped, so the next open keeps what it writes.
+    again = TokenizationCache.open(path)
+    again.put_many([(h, [VocabWord(lemma="テスト", reading="てすと")])])
+    again.close()
+    third = TokenizationCache.open(path)
+    assert third.get_many([h]) != {}
+    third.close()
+
+
+def test_an_unstamped_cache_is_discarded(tmp_path: Path) -> None:
+    """A cache predating the stamp carries pre-change extractions - drop it."""
+    import sqlite3
+
+    path = tmp_path / "tok.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE tokenization (sentence_hash TEXT PRIMARY KEY, words TEXT NOT NULL)")
+    conn.execute(
+        "INSERT INTO tokenization VALUES (?, ?)",
+        (sentence_hash("ゲーム"), '[{"lemma": "ゲーム", "reading": "げーむ"}]'),
+    )
+    conn.commit()
+    conn.close()
+
+    cache = TokenizationCache.open(path)
+    assert cache.get_many([sentence_hash("ゲーム")]) == {}
+    cache.close()

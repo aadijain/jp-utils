@@ -30,6 +30,12 @@ from app.text.tokenizer import Tokenizer
 from shared.text import SplitMode, Token
 from shared.vocab import VocabWord
 
+# NB: changing what any rule below keeps or drops changes what an extraction
+# returns, and `TokenizationCache` keys on the sentence alone - so a stored entry
+# would keep serving the OLD answer. Bump
+# `app.cache.tokenization.EXTRACTION_VERSION` with any such edit here (or in
+# `text/inflection.py`, which the stored reading comes from) to invalidate it.
+
 # Sudachi top-level POS to keep (content words). "*" fillers are already stripped
 # from the contract Token, so part_of_speech[0] is the top-level class:
 # noun / verb / i-adj / na-adj / adverb / pronoun.

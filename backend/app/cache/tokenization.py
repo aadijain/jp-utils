@@ -6,6 +6,11 @@ sentence text (the add-on removes markup before sending; the split mode is alway
 C so it is not part of the key); the value is the
 stable content-word set (lemma + reading).
 
+Entries are keyed by the sentence ALONE, so a change to the extraction rules is
+invisible in the key and a pre-change row is indistinguishable from a fresh one:
+:data:`EXTRACTION_VERSION` stamps the file so such a cache is emptied on open
+rather than served forever.
+
 This is **derived, disposable infra** - delete the file to rebuild - kept OUT of
 `vocab.db` so that store's append-only / personal-data invariants stay pure. It is
 cross-cutting state on `app.state`, like the tokenizer and dict cache, owned by
@@ -15,6 +20,7 @@ writes (as `VocabStore`); at single-user scale lock contention is negligible.
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
@@ -22,10 +28,26 @@ from pathlib import Path
 
 from shared.vocab import VocabWord
 
+logger = logging.getLogger("jp_utils.backend")
+
+# Bump whenever a change under `app/text/` alters what a content-word extraction
+# RETURNS: the POS keep-set or the noun-subtype drops, the purely-katakana rule
+# (`text/words.py:is_content`), or the deinflection / reading rules a stored
+# lemma+reading comes from (`text/inflection.py`). A cache stamped with a
+# different version - an unstamped one included - is emptied on open. This has
+# already bitten once: the katakana filter landed a month after the cache
+# shipped, and a third of the live rows kept serving katakana lemmas that
+# `is_content` can no longer produce.
+EXTRACTION_VERSION = 1
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tokenization (
     sentence_hash TEXT PRIMARY KEY,
     words         TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -61,6 +83,39 @@ class TokenizationCache:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
         self._conn.executescript(_SCHEMA)
+        self._conn.commit()
+        self._discard_stale_entries()
+
+    def _discard_stale_entries(self) -> None:
+        """Empty the cache when it was built under different extraction rules.
+
+        A stale row is indistinguishable from a fresh one at lookup time (the key
+        is the sentence, nothing else), so dropping the lot is the only sound
+        invalidation - and since every entry is re-derivable from its sentence,
+        the cost is one re-tokenization each. It doubles as the orphan GC: rows
+        for notes that no longer exist go with it.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = 'extraction_version'"
+        ).fetchone()
+        stored = int(row["value"]) if row and row["value"].isdigit() else None
+        if stored == EXTRACTION_VERSION:
+            return
+        discarded = self._conn.execute("SELECT COUNT(*) AS c FROM tokenization").fetchone()["c"]
+        if discarded:
+            logger.warning(
+                "Discarding %d tokenization-cache entries from %s: built under extraction "
+                "version %s, this build is %s",
+                discarded,
+                self._path,
+                stored,
+                EXTRACTION_VERSION,
+            )
+        self._conn.execute("DELETE FROM tokenization")
+        self._conn.execute(
+            "INSERT OR REPLACE INTO meta VALUES ('extraction_version', ?)",
+            (str(EXTRACTION_VERSION),),
+        )
         self._conn.commit()
 
     @classmethod
