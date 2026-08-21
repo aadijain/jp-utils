@@ -4,7 +4,12 @@ The source zips are parsed exactly once into an indexed SQLite file
 (`build_cache`); requests then do sub-millisecond point lookups via `DictCache`.
 The cache is a throwaway derived artifact: delete it and rebuild. Reads use one
 read-only connection per thread (FastAPI's sync endpoints run in a threadpool),
-created lazily and reused.
+created lazily and reused. Rebuild it OFFLINE: `build_cache` unlinks the file, so
+a rebuild under a running service leaves every connection opened beforehand on
+the old (unlinked) inode while threads that connect afterwards see the new file -
+a mixed view, with the lookup memos frozen on whichever answer came first.
+`SCHEMA_VERSION` does not catch it either, being checked only at open. Restart the
+service after rebuilding.
 
 CLI: `python -m app.dicts.cache [--force] [--cache PATH]`.
 """
@@ -219,10 +224,15 @@ class DictCache:
         self._path = cache_path
         self._local = threading.local()
         self._status: list[DictTableStatus] | None = None
-        # A built cache is immutable, so a lookup's answer never changes. The same
-        # words recur constantly across a corpus (furigana is looked up once per
-        # TOKEN), so memoizing turns most of that into dict hits. Bounded, and
-        # shared across threads - `lru_cache` is itself thread-safe.
+        # A built cache is immutable for as long as the service runs (rebuilding
+        # under it is the one exception - see the module docstring), so a lookup's
+        # answer never changes. The same words recur constantly across a corpus -
+        # furigana is looked up once per TOKEN and measured 64% hits over a
+        # sentence sweep - so memoizing turns most of that into dict hits (~28us
+        # -> ~0.2us). The frequency and pitch memos see far less reuse: their
+        # callers de-duplicate upstream, so they pay off across requests, not
+        # within one. Bounded, per-instance (a module-level decorator here would
+        # leak `self`), and shared across threads - `lru_cache` is thread-safe.
         self._lookup_frequency = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._frequency)
         self._lookup_furigana = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._furigana)
         self._lookup_pitch = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._pitch)
@@ -337,9 +347,10 @@ class DictCache:
         whole batch in chunked `IN`-list queries instead of one round trip per
         term (5000 lemmas: ~296ms -> ~19ms). Deliberately NOT memoized: the one
         caller (the n+1 sort's frequency tie-break) already de-duplicates to
-        distinct lemmas, so every lookup in a sort is a miss and the memo would
-        only add eviction churn to the per-token furigana lookups it shares a
-        budget with.
+        distinct lemmas, so every lookup in a sort is a miss - the memo would
+        carry a whole sort's lemmas for no hit. (Each memo holds its OWN
+        `maxsize` budget, so this would not evict the per-token furigana entries
+        as previously claimed; it simply has nothing to gain.)
         """
         keys = list(dict.fromkeys(terms))  # de-dup, order-preserving
         if not keys:
