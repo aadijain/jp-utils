@@ -52,5 +52,11 @@ jobs:
       # `tests` packages and errors at collection.
       - name: Test backend
         run: uv run pytest backend/tests
+      # `addon/` post-dates the first ~30 commits, where pytest exits 4 on the path
+      # it cannot find, so a suite a commit does not have is skipped rather than
+      # failed. The index is the oracle, not the disk: checking out an old commit
+      # leaves ignored files (`addon/tests/__pycache__`) behind, so the directory
+      # is still there and pytest exits 5 on the empty collection instead. Read
+      # verbatim by verify-rewrite.sh and cc_guard.py, so all three agree.
       - name: Test add-on
-        run: uv run pytest addon/tests
+        run: if [ -n "$(git ls-files addon/tests)" ]; then uv run pytest addon/tests; fi
