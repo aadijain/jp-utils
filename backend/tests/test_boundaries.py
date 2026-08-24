@@ -7,6 +7,8 @@ check in the project can see.
 
 import ast
 import pathlib
+import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -90,3 +92,16 @@ def test_shared_imports_only_stdlib() -> None:
 def test_backend_never_touches_anki() -> None:
     """All Anki I/O is in-process via the add-on; the backend only speaks HTTP."""
     assert _importers(BACKEND, "anki", "aqt") == []
+
+
+def test_ci_path_guards_never_skip_at_the_tip() -> None:
+    """A check step guarded on its own target skips itself where that target is not
+    tracked, which is right for a commit predating the member and wrong here - a
+    rename would retire the step in silence, in CI and in verify-rewrite alike."""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    guarded = re.findall(r"git ls-files ([^ )\"]+)", ci)
+    assert guarded, "no path-guarded step in ci.yml, so this test guards nothing"
+    tracked = subprocess.run(
+        ["git", "ls-files", *guarded], cwd=ROOT, capture_output=True, text=True
+    ).stdout
+    assert [p for p in guarded if p not in tracked] == []
