@@ -121,6 +121,10 @@ class _FakeDicts:
     def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
         return self._ranks.get(term)
 
+    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
+        # As-written ranks only; the kana-spelling comparison has test_canonical.
+        return (self._ranks.get(term), None)
+
 
 def test_card_side_collapses_to_the_same_key_as_the_sentence_side(tokenizer: Tokenizer) -> None:
     # The two must agree: if a sentence's 作れる counts as 作る, a card whose word

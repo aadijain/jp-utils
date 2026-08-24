@@ -26,6 +26,10 @@ class _FakeDicts:
     def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
         return self._ranks.get(term)
 
+    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
+        # As-written ranks only; the kana-spelling comparison has test_canonical.
+        return (self._ranks.get(term), None)
+
 
 @pytest.fixture
 def cache(tmp_path: Path) -> TokenizationCache:

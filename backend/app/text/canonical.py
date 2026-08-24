@@ -24,20 +24,26 @@ populations Sudachi's normalization mixes together:
 
 JPDB rather than jitendex on purpose: jitendex answers "is this a headword",
 and kana spellings of kanji words are usually not listed as headwords, so it
-misfires on あいだ, あした, あなた, ある, いく - 373 such collapses against
-JPDB's 192 over the same corpus. JPDB is a corpus frequency list, so a rank means
-"real Japanese uses this form on its own", which is the question being asked.
+misfires on あいだ, あした, あなた, ある, いく. JPDB is a corpus frequency list,
+so a rank means "real Japanese uses this form on its own", which is the question
+being asked.
+
+The base still has to be a spelling people write, and **that is a comparison,
+not a threshold**. JPDB gives two figures per entry - the term as written and
+the kana spelling of the same word - and their order is the whole answer:
+迚も ranks 152585 against とても's 329, so it is archaic and worthless as a key,
+while 省く ranks 10363 against はぶく's 48758, so it is simply an uncommon word
+written the normal way. A single rank cannot tell those apart; both look "rare".
 """
 
 from app.dicts import DictCache
 from app.text.tokenizer import Tokenizer
 
-# The base must itself be a reasonably common word. Sudachi's normalization
-# bottoms out in spellings nobody writes (やれる -> 遣る 36634, とっても -> 迚も
-# 152585, あんこう -> 鮟鱇 119997) and collapsing onto those trades one key
-# nothing holds for another. Measured over the 2390-card corpus: the gain
-# plateaus by 5000 (+17 one-unknown cards, the same as no ceiling at all) while
-# the ceiling drops the whole junk tail.
+# Backstop for the bases JPDB gives no kana spelling to compare against: with
+# nothing to compare, a common-enough base is the only remaining evidence that a
+# spelling is real. It is what refuses 鮟鱇, and 重曹 - the wrong
+# normalization of 重そう. Bases that DO have a kana figure are decided by the
+# comparison instead, so this ceiling never sees them.
 CANONICAL_MAX_RANK = 5000
 
 
@@ -62,7 +68,20 @@ def canonical_lemma(
         return lemma, reading
     if dicts.lookup_frequency(lemma) is not None:
         return lemma, reading  # a ranked form is a word in its own right
-    base_rank = dicts.lookup_frequency(normalized)
-    if base_rank is None or base_rank > CANONICAL_MAX_RANK:
+    if not _is_the_written_spelling(*dicts.lookup_spelling_ranks(normalized)):
         return lemma, reading
     return normalized, tokenizer.reading_of(normalized) or reading
+
+
+def _is_the_written_spelling(written: int | None, kana: int | None) -> bool:
+    """Whether the base is the spelling the language uses for that word.
+
+    `written` beating `kana` settles it outright, however rare the word is. The
+    ceiling stays for the two cases with nothing to compare: no kana figure, and
+    a base JPDB ranks only through its kana spelling.
+    """
+    if written is None:
+        return kana is not None and kana <= CANONICAL_MAX_RANK
+    if kana is None:
+        return written <= CANONICAL_MAX_RANK
+    return written < kana or written <= CANONICAL_MAX_RANK
