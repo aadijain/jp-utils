@@ -168,6 +168,18 @@ def test_lookup_frequency_prefers_kanji_rank(built_cache: Path) -> None:
     assert cache.lookup_frequency("存在しない") is None
 
 
+def test_lookup_spelling_ranks_keeps_both_figures(built_cache: Path) -> None:
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    # Both figures survive the build, so a caller can compare them: 水 is ranked
+    # as written and again through its kana spelling; みず has only the kana
+    # figure, 食べる only the as-written one.
+    assert cache.lookup_spelling_ranks("水") == (500, 2100)
+    assert cache.lookup_spelling_ranks("みず") == (None, 1500)
+    assert cache.lookup_spelling_ranks("食べる") == (700, None)
+    assert cache.lookup_spelling_ranks("存在しない") == (None, None)
+
+
 def test_lookup_frequency_disambiguates_by_reading(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None

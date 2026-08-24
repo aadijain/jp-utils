@@ -40,7 +40,11 @@ _LOOKUP_CACHE_SIZE = 8192
 # SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999; chunk IN-lists well under it.
 _CHUNK = 500
 
-SCHEMA_VERSION = 4  # v4: add the pitches table (downstep positions per term+reading)
+# A term's one effective rank: the as-written figure, falling back to the kana
+# spelling's where JPDB has only that. What `lookup_frequency` has always meant.
+_RANK = "COALESCE(rank, kana_rank)"
+
+SCHEMA_VERSION = 5  # v5: split a frequency into the as-written and kana-spelling ranks
 
 _SCHEMA = """
 CREATE TABLE meanings (
@@ -52,9 +56,10 @@ CREATE TABLE meanings (
     jlpt    INTEGER
 );
 CREATE TABLE frequencies (
-    term    TEXT NOT NULL,
-    reading TEXT NOT NULL,
-    rank    INTEGER NOT NULL,
+    term      TEXT NOT NULL,
+    reading   TEXT NOT NULL,
+    rank      INTEGER,
+    kana_rank INTEGER,
     PRIMARY KEY (term, reading)
 );
 CREATE TABLE furigana (
@@ -107,20 +112,23 @@ def _insert_meanings(conn: sqlite3.Connection, path: Path) -> int:
 def _insert_frequencies(conn: sqlite3.Connection, path: Path) -> int:
     # Bucket per (term, reading) so homograph readings keep distinct ranks
     # (人 ひと=71 / にん=564). JPDB has up to two rows per (term, reading): the
-    # kanji-spelling rank and the kana-spelling rank (㋕); keep the best (lowest)
-    # rank within each form, preferring kanji-form over kana-form.
-    kanji: dict[tuple[str, str], int] = {}
+    # term as written, and the kana spelling of the same word (㋕). Both are
+    # kept, in their own columns: together they say whether a spelling is the one
+    # the language uses, which either alone cannot - an uncommon word and an
+    # archaic spelling of a common one both read as "a bad rank".
+    written: dict[tuple[str, str], int] = {}
     kana: dict[tuple[str, str], int] = {}
     for r in parse_jpdb_freq(path):
         key = (r.term, r.reading)
-        bucket = kana if r.is_kana_form else kanji
+        bucket = kana if r.is_kana_form else written
         prev = bucket.get(key)
         if prev is None or r.rank < prev:
             bucket[key] = r.rank
-    merged = dict(kana)
-    merged.update(kanji)  # kanji-form wins where both exist
-    rows = ((term, reading, rank) for (term, reading), rank in merged.items())
-    return _executemany(conn, "INSERT INTO frequencies VALUES (?, ?, ?)", rows)
+    rows = (
+        (term, reading, written.get((term, reading)), kana.get((term, reading)))
+        for term, reading in written.keys() | kana.keys()
+    )
+    return _executemany(conn, "INSERT INTO frequencies VALUES (?, ?, ?, ?)", rows)
 
 
 def _insert_furigana(conn: sqlite3.Connection, path: Path) -> int:
@@ -234,6 +242,7 @@ class DictCache:
         # within one. Bounded, per-instance (a module-level decorator here would
         # leak `self`), and shared across threads - `lru_cache` is thread-safe.
         self._lookup_frequency = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._frequency)
+        self._lookup_spelling_ranks = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._spelling_ranks)
         self._lookup_furigana = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._furigana)
         self._lookup_pitch = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._pitch)
 
@@ -329,16 +338,39 @@ class DictCache:
         if reading:
             hira = kata_to_hira(reading)
             row = conn.execute(
-                "SELECT rank FROM frequencies WHERE term = ? AND reading = ?",
+                f"SELECT {_RANK} AS rank FROM frequencies WHERE term = ? AND reading = ?",
                 (term, hira),
             ).fetchone()
             if row:
                 return row["rank"]
             term = hira  # kana-form fallback: resolve via the hiragana kana entry
         row = conn.execute(
-            "SELECT MIN(rank) AS rank FROM frequencies WHERE term = ?", (term,)
+            f"SELECT MIN({_RANK}) AS rank FROM frequencies WHERE term = ?", (term,)
         ).fetchone()
         return row["rank"] if row and row["rank"] is not None else None
+
+    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
+        """`(as-written rank, kana-spelling rank)` for a term. Memoized.
+
+        Either may be None: a term JPDB ranks only through its kana spelling has
+        no as-written figure, and one it never writes in kana has no kana figure.
+        Comparing the two answers whether this spelling is the one the language
+        uses for the word, which `lookup_frequency`'s single number cannot.
+        """
+        return self._lookup_spelling_ranks(term)
+
+    def _spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
+        """Uncached :meth:`lookup_spelling_ranks`, best of each across readings."""
+        row = (
+            self._conn()
+            .execute(
+                "SELECT MIN(rank) AS written, MIN(kana_rank) AS kana "
+                "FROM frequencies WHERE term = ?",
+                (term,),
+            )
+            .fetchone()
+        )
+        return (row["written"], row["kana"]) if row else (None, None)
 
     def lookup_frequency_many(self, terms: Iterable[str]) -> dict[str, int]:
         """Best rank per term, lemma-only; unranked terms are absent from the map.
@@ -361,7 +393,7 @@ class DictCache:
             chunk = keys[start : start + _CHUNK]
             placeholders = ",".join("?" * len(chunk))
             rows = conn.execute(
-                "SELECT term, MIN(rank) AS rank FROM frequencies "
+                f"SELECT term, MIN({_RANK}) AS rank FROM frequencies "
                 f"WHERE term IN ({placeholders}) GROUP BY term",
                 chunk,
             ).fetchall()
@@ -425,6 +457,7 @@ class DictCache:
         shutdown - nothing should keep the results alive past it.
         """
         self._lookup_frequency.cache_clear()
+        self._lookup_spelling_ranks.cache_clear()
         self._lookup_furigana.cache_clear()
         self._lookup_pitch.cache_clear()
         conn = getattr(self._local, "conn", None)
