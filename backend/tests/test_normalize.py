@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.text.normalize import deinflected_key, normalize
 from app.text.tokenizer import Tokenizer
+from app.text.words import content_words
 
 
 def test_normalize_deinflects_verb(tokenizer: Tokenizer) -> None:
@@ -109,3 +110,39 @@ def test_normalize_unavailable_without_tokenizer(
 def test_normalize_requires_auth(client: TestClient) -> None:
     resp = client.post("/v1/text/normalize", json={"surfaces": ["猫"]})
     assert resp.status_code == 401
+
+
+class _FakeDicts:
+    """Stands in for `DictCache` with a hand-written rank table (see test_canonical)."""
+
+    def __init__(self, ranks: dict[str, int]) -> None:
+        self._ranks = ranks
+
+    def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
+        return self._ranks.get(term)
+
+
+def test_card_side_collapses_to_the_same_key_as_the_sentence_side(tokenizer: Tokenizer) -> None:
+    # The two must agree: if a sentence's 作れる counts as 作る, a card whose word
+    # field says 作れる has to key 作る too, or that card stops marking its own
+    # sentences readable.
+    dicts = _FakeDicts({"作る": 140})
+    assert content_words(tokenizer, "物が作れる", dicts=dicts) == ["物", "作る"]
+    result = normalize(tokenizer, "作れる", dicts=dicts)
+    assert (result.lemma, result.reading) == ("作る", "つくる")
+
+
+def test_a_ranked_variant_keeps_the_spelling_the_card_uses(tokenizer: Tokenizer) -> None:
+    dicts = _FakeDicts({"捜す": 2123, "探す": 421})
+    assert normalize(tokenizer, "捜す", dicts=dicts).lemma == "捜す"
+
+
+def test_without_dicts_normalize_is_unchanged(tokenizer: Tokenizer) -> None:
+    assert normalize(tokenizer, "作れる").lemma == "作れる"
+
+
+def test_deinflected_key_retries_a_potential_form_as_its_verb(tokenizer: Tokenizer) -> None:
+    # Without the gate 作れる is its own dictionary form, so the retry has nothing
+    # new to offer and the lookup stays a miss.
+    assert deinflected_key(tokenizer, "作れる") is None
+    assert deinflected_key(tokenizer, "作れる", _FakeDicts({"作る": 140})) == ("作る", "つくる")

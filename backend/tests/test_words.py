@@ -17,6 +17,16 @@ def _tok(tokenizer: Tokenizer, text: str):
     return tokenizer.tokenize(text)[0]
 
 
+class _FakeDicts:
+    """Stands in for `DictCache` with a hand-written rank table (see test_canonical)."""
+
+    def __init__(self, ranks: dict[str, int]) -> None:
+        self._ranks = ranks
+
+    def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
+        return self._ranks.get(term)
+
+
 @pytest.fixture
 def cache(tmp_path: Path) -> TokenizationCache:
     return TokenizationCache.open(tmp_path / "tok.db")
@@ -85,3 +95,25 @@ def test_cache_hit_skips_tokenization(tokenizer: Tokenizer, cache: TokenizationC
 def test_no_cache_argument_still_extracts(tokenizer: Tokenizer) -> None:
     # The cache is optional; without it the extractor behaves exactly as before.
     assert content_words_with_readings(tokenizer, "猫が魚を食べた")[0].lemma == "猫"
+
+
+def test_collapses_inflection_residue_when_dicts_are_available(tokenizer: Tokenizer) -> None:
+    # 話せる has no rank of its own; the sentence's vocabulary is 話す.
+    dicts = _FakeDicts({"話す": 285})
+    assert content_words(tokenizer, "日本語が話せる", dicts=dicts) == ["日本語", "話す"]
+
+
+def test_dedupes_on_the_collapsed_lemma(tokenizer: Tokenizer) -> None:
+    # 作る and 作れる are one word, so the sentence must not count both.
+    dicts = _FakeDicts({"作る": 140})
+    assert content_words(tokenizer, "作る人が作れる物", dicts=dicts) == ["作る", "人", "物"]
+
+
+def test_collapsed_lemma_carries_the_base_reading(tokenizer: Tokenizer) -> None:
+    dicts = _FakeDicts({"読む": 320})
+    words = content_words_with_readings(tokenizer, "本が読めない", dicts=dicts)
+    assert ("読む", "よむ") in [(w.lemma, w.reading) for w in words]
+
+
+def test_without_dicts_extraction_is_unchanged(tokenizer: Tokenizer) -> None:
+    assert content_words(tokenizer, "日本語が話せる") == ["日本語", "話せる"]

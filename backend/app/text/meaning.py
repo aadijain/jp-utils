@@ -79,7 +79,7 @@ def lookup_meaning(tokenizer: Tokenizer, cache: DictCache, query: MeaningQuery) 
         return MeaningResult(
             lemma=query.lemma, reading=query.reading, entries=entries, all_readings=all_readings
         )
-    key = deinflected_key(tokenizer, query.lemma)
+    key = deinflected_key(tokenizer, query.lemma, cache)
     if key is not None:
         alt_entries, alt_readings = _entries(cache, key[0], key[1])
         if alt_entries:

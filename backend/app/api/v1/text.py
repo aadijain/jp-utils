@@ -171,6 +171,7 @@ def content_words(
     req: ContentWordsRequest,
     tokenizer: Tokenizer = Depends(get_tokenizer),
     cache: TokenizationCache | None = Depends(get_tokenization_cache),
+    dicts: DictCache | None = Depends(get_dict_cache),
 ) -> ContentWordsResponse:
     """Extract each text's distinct content words (lemma + reading). Aligned with `req.texts`.
 
@@ -180,7 +181,7 @@ def content_words(
     batch rather than once per text.
     """
     check_batch(req.texts, "texts")
-    results = content_words_batch(tokenizer, req.texts, req.mode, cache)
+    results = content_words_batch(tokenizer, req.texts, req.mode, cache, dicts)
     return ContentWordsResponse(results=results)
 
 
@@ -188,10 +189,11 @@ def content_words(
 def normalize_text(
     req: NormalizeRequest,
     tokenizer: Tokenizer = Depends(get_tokenizer),
+    dicts: DictCache | None = Depends(get_dict_cache),
 ) -> NormalizeResponse:
     """Deinflect each surface to its canonical lemma + reading. Aligned with `req.surfaces`."""
     check_batch(req.surfaces, "surfaces")
-    results = [normalize(tokenizer, surface, req.mode) for surface in req.surfaces]
+    results = [normalize(tokenizer, surface, req.mode, dicts) for surface in req.surfaces]
     return NormalizeResponse(results=results)
 
 

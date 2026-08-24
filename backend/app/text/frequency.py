@@ -25,7 +25,7 @@ def lookup_frequency(
     rank = cache.lookup_frequency(query.term, query.reading)
     if rank is not None:
         return FrequencyResult(term=query.term, reading=query.reading, rank=rank)
-    key = deinflected_key(tokenizer, query.term)
+    key = deinflected_key(tokenizer, query.term, cache)
     if key is not None:
         rank = cache.lookup_frequency(*key)
         if rank is not None:

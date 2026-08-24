@@ -49,7 +49,7 @@ def lookup_pitch(tokenizer: Tokenizer, cache: DictCache, query: PitchQuery) -> P
     positions = cache.lookup_pitch(query.term, query.reading)
     if positions:
         return _result(query.term, query.reading, positions)
-    key = deinflected_key(tokenizer, query.term)
+    key = deinflected_key(tokenizer, query.term, cache)
     if key is not None:
         positions = cache.lookup_pitch(*key)
         if positions:

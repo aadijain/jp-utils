@@ -32,13 +32,14 @@ logger = logging.getLogger("jp_utils.backend")
 
 # Bump whenever a change under `app/text/` alters what a content-word extraction
 # RETURNS: the POS keep-set or the noun-subtype drops, the purely-katakana rule
-# (`text/words.py:is_content`), or the deinflection / reading rules a stored
-# lemma+reading comes from (`text/inflection.py`). A cache stamped with a
+# (`text/words.py:is_content`), the deinflection / reading rules a stored
+# lemma+reading comes from (`text/inflection.py`), or the rule deciding what a
+# lemma collapses to (`text/canonical.py`). A cache stamped with a
 # different version - an unstamped one included - is emptied on open. This has
 # already bitten once: the katakana filter landed a month after the cache
 # shipped, and a third of the live rows kept serving katakana lemmas that
 # `is_content` can no longer produce.
-EXTRACTION_VERSION = 1
+EXTRACTION_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tokenization (

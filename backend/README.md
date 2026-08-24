@@ -21,12 +21,14 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /meaning` | Dictionary definitions, per-sense (Jitendex); optional reading filter |
 | `POST /frequency` | Word frequency ranks (JPDB; lower = more frequent) |
 | `POST /pitch` | Pitch-accent downstep positions + categories (heiban/atamadaka/nakadaka/odaka) per word (Kanjium) |
-| `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key). Words the tokenizer splits (compounds, prefixed words, noun+suffix) stay whole; `covered` reports whether the surface had a real word to head it |
-| `POST /content-words` | The vocabulary words of a sentence (content-word filtered, each with its in-context reading) - used to generate vocab cards |
+| `POST /normalize` | Deinflect a word to its dictionary form and reading (the canonical surface -> lemma+reading key), resolving an inflected form to the word it belongs to (作れる -> 作る). Words the tokenizer splits (compounds, prefixed words, noun+suffix) stay whole; `covered` reports whether the surface had a real word to head it |
+| `POST /content-words` | The vocabulary words of a sentence (content-word filtered, each resolved to the word it belongs to, with its in-context reading) - used to generate vocab cards |
 | `POST /locate` | Find a word in a sentence by its dictionary form (inflection-aware, and across a word the tokenizer splits), returning the sentence split into segments with the match flagged. The flagged slice covers the word's own conjugation and stops where the next word starts - used to highlight the mined word |
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
-`/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword. Each result echoes whichever key answered.
+`/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword - a potential form retries as its base verb, so 作れる finds 作る. Each result echoes whichever key answered.
+
+An inflected form counts as the word it belongs to, so a sentence with 作れる asks you to know 作る, not a separate word. Alternate spellings of a real word are left alone: 捜す stays 捜す rather than becoming 探す. Needs the dict cache; without it, forms are counted as written.
 
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
 
@@ -158,7 +160,7 @@ app/
   api/
     health.py      public /health
     v1/            text.py, vocab.py, mining.py, translations.py routers (bearer-guarded)
-  text/            tokenizer, inflection, furigana, convert, meaning, frequency, normalize, words, audio, spacing
+  text/            tokenizer, inflection, canonical, furigana, convert, meaning, frequency, normalize, words, audio, spacing
   vocab/           store.py (the event ledger)
   mining/          ordering/ (pure n+1 algorithms, keyed by name) + sort.py (text + vocab composition)
   translations/    queue.py (the async sentence-translation queue)

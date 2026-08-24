@@ -77,7 +77,7 @@ def nplus1_sort(
     # Each card's content words; the extractor memoizes per sentence in `tok_cache`,
     # reading and writing it once for the whole batch.
     word_lists: list[list[VocabWord]] = content_words_batch(
-        tokenizer, [s.text for s in sentences], mode, tok_cache
+        tokenizer, [s.text for s in sentences], mode, tok_cache, cache
     )
     lemma_lists = [[w.lemma for w in words] for words in word_lists]
     known = _known_lemmas(store, lemma_lists)

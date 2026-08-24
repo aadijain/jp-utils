@@ -6,7 +6,9 @@ punctuation, proper nouns, numerals and purely-katakana words (loanwords/names)
 are dropped. Each surviving morpheme is
 reduced to its dictionary-form lemma (per token, not per word span: a sentence's
 vocabulary is its individual content words, so 俺たち contributes 俺 rather than
-becoming a word of its own); matching against the learnt set is
+becoming a word of its own), then collapsed onto the word that form belongs to
+(`canonical.canonical_lemma`, so 作れる counts as 作る); matching against the
+learnt set is
 **lemma-only** (the stored reading is dict-preferred while the tokenizer emits
 Sudachi readings, so reading is not a safe key yet).
 
@@ -24,6 +26,8 @@ and the single place the cache is consulted - once per BATCH, not per text;
 from collections.abc import Sequence
 
 from app.cache import TokenizationCache, sentence_hash
+from app.dicts import DictCache
+from app.text.canonical import canonical_lemma
 from app.text.convert import kata_to_hira
 from app.text.inflection import lemma_reading
 from app.text.tokenizer import Tokenizer
@@ -34,7 +38,8 @@ from shared.vocab import VocabWord
 # returns, and `TokenizationCache` keys on the sentence alone - so a stored entry
 # would keep serving the OLD answer. Bump
 # `app.cache.tokenization.EXTRACTION_VERSION` with any such edit here (or in
-# `text/inflection.py`, which the stored reading comes from) to invalidate it.
+# `text/inflection.py`, which the stored reading comes from, or
+# `text/canonical.py`, which decides what a lemma collapses to) to invalidate it.
 
 # Sudachi top-level POS to keep (content words). "*" fillers are already stripped
 # from the contract Token, so part_of_speech[0] is the top-level class:
@@ -75,19 +80,28 @@ def is_content(token: Token) -> bool:
     return True
 
 
-def _extract(tokenizer: Tokenizer, text: str, mode: SplitMode) -> list[VocabWord]:
-    """Tokenize `text` and keep its distinct content words (lemma + reading)."""
+def _extract(
+    tokenizer: Tokenizer, text: str, mode: SplitMode, dicts: DictCache | None
+) -> list[VocabWord]:
+    """Tokenize `text` and keep its distinct content words (lemma + reading).
+
+    Dedup happens on the CANONICAL lemma, after `canonical_lemma` has collapsed
+    inflected forms - 作れる and 作る in one sentence are one word, not two.
+    """
     words: list[VocabWord] = []
     seen: set[str] = set()
     for token in tokenizer.tokenize(text, mode):
         if not is_content(token):
             continue
         lemma = token.dictionary_form or token.surface
-        if not lemma or lemma in seen:
+        if not lemma:
+            continue
+        reading = lemma_reading(tokenizer, token.surface, token.reading, lemma)
+        lemma, reading = canonical_lemma(tokenizer, dicts, lemma, reading, token.normalized_form)
+        if lemma in seen:
             continue
         seen.add(lemma)
-        reading = kata_to_hira(lemma_reading(tokenizer, token.surface, token.reading, lemma))
-        words.append(VocabWord(lemma=lemma, reading=reading))
+        words.append(VocabWord(lemma=lemma, reading=kata_to_hira(reading)))
     return words
 
 
@@ -96,6 +110,7 @@ def content_words_with_readings(
     text: str,
     mode: SplitMode = SplitMode.C,
     cache: TokenizationCache | None = None,
+    dicts: DictCache | None = None,
 ) -> list[VocabWord]:
     """The distinct content words of `text` (lemma + reading), in first-seen order.
 
@@ -114,7 +129,7 @@ def content_words_with_readings(
     batch should use that directly - it consults the cache once for the batch
     instead of once per text.
     """
-    return content_words_batch(tokenizer, [text], mode, cache)[0]
+    return content_words_batch(tokenizer, [text], mode, cache, dicts)[0]
 
 
 def content_words_batch(
@@ -122,6 +137,7 @@ def content_words_batch(
     texts: Sequence[str],
     mode: SplitMode = SplitMode.C,
     cache: TokenizationCache | None = None,
+    dicts: DictCache | None = None,
 ) -> list[list[VocabWord]]:
     """`content_words_with_readings` over many texts; result aligned with `texts`.
 
@@ -133,7 +149,7 @@ def content_words_batch(
     Texts repeated within the batch are extracted once (they share a content hash).
     """
     if cache is None or mode != SplitMode.C:
-        return [_extract(tokenizer, text, mode) for text in texts]
+        return [_extract(tokenizer, text, mode, dicts) for text in texts]
 
     hashes = [sentence_hash(text) for text in texts]
     cached = cache.get_many(hashes)
@@ -145,7 +161,7 @@ def content_words_batch(
         if words is None:
             words = extracted.get(key)
         if words is None:
-            words = _extract(tokenizer, text, mode)
+            words = _extract(tokenizer, text, mode, dicts)
             extracted[key] = words
         results.append(words)
 
@@ -159,6 +175,7 @@ def content_words(
     text: str,
     mode: SplitMode = SplitMode.C,
     cache: TokenizationCache | None = None,
+    dicts: DictCache | None = None,
 ) -> list[str]:
     """The distinct content-word lemmas of `text`, in first-seen order."""
-    return [w.lemma for w in content_words_with_readings(tokenizer, text, mode, cache)]
+    return [w.lemma for w in content_words_with_readings(tokenizer, text, mode, cache, dicts)]
