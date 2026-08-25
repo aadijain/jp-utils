@@ -35,9 +35,11 @@ the kana spelling of the same word - and their order is the whole answer:
 while 省く ranks 10363 against はぶく's 48758, so it is simply an uncommon word
 written the normal way. A single rank cannot tell those apart; both look "rare".
 
-`written_spelling` reads the same pairing backwards, for the words the store
-already keys in kana: it names the kanji spelling a dictionary is likely to file
-one under.
+When the kana spelling wins that comparison outright, it is not enough to refuse
+the base - the row names the spelling that *should* be the key, so the collapse
+takes it: とっても keys on とても (329) rather than staying its own word or
+becoming 迚も. `written_spelling` is the other side of that trade, because a kana
+key is often not a jitendex headword.
 """
 
 from app.dicts import DictCache, Spellings
@@ -49,6 +51,12 @@ from app.text.tokenizer import Tokenizer
 # normalization of 重そう. Bases that DO have a kana figure are decided by the
 # comparison instead, so this ceiling never sees them.
 CANONICAL_MAX_RANK = 5000
+
+# How far the kana spelling must beat the as-written one before it takes the key
+# rather than merely denying it to the base. A margin rather than "kana is lower"
+# because a word genuinely written both ways ranks close either way (嵌まる against
+# はまる); only a rout means the kanji spelling is one nobody uses.
+KANA_SPELLING_MARGIN = 4
 
 
 def canonical_lemma(
@@ -72,24 +80,45 @@ def canonical_lemma(
         return lemma, reading
     if dicts.lookup_frequency(lemma) is not None:
         return lemma, reading  # a ranked form is a word in its own right
-    if not _is_the_written_spelling(dicts.lookup_spellings(normalized)):
-        return lemma, reading
-    return normalized, tokenizer.reading_of(normalized) or reading
+    spellings = dicts.lookup_spellings(normalized)
+    base = _winning_kana_spelling(spellings, lemma)
+    if base is None:
+        if not _is_the_written_spelling(spellings):
+            return lemma, reading
+        base = normalized
+    return base, tokenizer.reading_of(base) or reading
 
 
 def written_spelling(dicts: DictCache, lemma: str, normalized: str) -> str | None:
-    """The kanji spelling of a lemma the store keys in kana, or None.
+    """The spelling `canonical_lemma` passed over when it keyed on kana, or None.
 
-    A kana lemma is frequently not a jitendex headword - it lists 貰う, not もらう -
+    A kana key is frequently not a jitendex headword - it lists 貰う, not もらう -
     so a meaning or pitch lookup on one misses however common the word is. The
-    spelling to retry is Sudachi's normalization of it, and JPDB pairing that
-    spelling back to this lemma is what makes the retry safe: 貰う's kana spelling
-    IS もらう, so it is the same word, while 菱 reads ひし rather than びし and is a
-    different word that Sudachi merely normalizes びし onto.
+    spelling to retry is the one the collapse overrode, and JPDB pairing it back
+    to this key is what makes the retry safe: 貰う's kana spelling IS もらう, so it
+    is the same word, while 菱 reads ひし rather than びし and is a different word
+    that Sudachi merely normalizes びし onto.
     """
     if not normalized or normalized == lemma:
         return None
     return normalized if dicts.lookup_spellings(normalized).kana_form == lemma else None
+
+
+def _winning_kana_spelling(spellings: Spellings, lemma: str) -> str | None:
+    """The kana spelling if it takes the key from the base outright, else None.
+
+    Never the form already written: a kana surface whose base normalizes back to
+    that same kana is not a collapse, it is a no-op wearing one.
+    """
+    kana_form, kana = spellings.kana_form, spellings.kana
+    if kana_form is None or kana is None or kana_form == lemma:
+        return None
+    if spellings.written is None:
+        # No rival spelling at all, so - deliberately unlike the ceiling below -
+        # how rare the word is says nothing about how it is spelled, and refusing
+        # here would cost ツルツル -> つるつる to protect nothing.
+        return kana_form
+    return kana_form if kana * KANA_SPELLING_MARGIN < spellings.written else None
 
 
 def _is_the_written_spelling(spellings: Spellings) -> bool:

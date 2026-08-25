@@ -39,7 +39,7 @@ logger = logging.getLogger("jp_utils.backend")
 # already bitten once: the katakana filter landed a month after the cache
 # shipped, and a third of the live rows kept serving katakana lemmas that
 # `is_content` can no longer produce.
-EXTRACTION_VERSION = 3
+EXTRACTION_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tokenization (

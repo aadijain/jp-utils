@@ -3,7 +3,12 @@
 import pytest
 
 from app.dicts import Spellings
-from app.text.canonical import CANONICAL_MAX_RANK, canonical_lemma, written_spelling
+from app.text.canonical import (
+    CANONICAL_MAX_RANK,
+    KANA_SPELLING_MARGIN,
+    canonical_lemma,
+    written_spelling,
+)
 from app.text.tokenizer import Tokenizer
 
 
@@ -30,7 +35,8 @@ def dicts() -> FakeDicts:
     # 作れる / 子ども are unranked residue; 捜す is a ranked variant of 探す.
     # 省く is written the normal way but uncommon; 迚も is an archaic spelling of
     # a very common word; 鮟鱇 has no kana figure to be compared against.
-    # 貰う is the spelling a dictionary files もらう under.
+    # 貰う is written both ways, with もらう the one that wins; 嵌まる is written
+    # both ways too but not by enough to lose the key.
     return FakeDicts(
         {
             "作る": Spellings(140, 2763, "つくる"),
@@ -42,8 +48,9 @@ def dicts() -> FakeDicts:
             "迚も": Spellings(152585, 329, "とても"),
             "ちっ": Spellings(None, 2831, "ちっ"),
             "貰う": Spellings(1295, 112, "もらう"),
-            "菱": Spellings(None, 40000, "ひし"),
+            "嵌まる": Spellings(23785, 6041, "はまる"),
             "べい": Spellings(None, 93514, "べい"),
+            "菱": Spellings(None, 40000, "ひし"),
         }
     )
 
@@ -82,12 +89,41 @@ def test_uncommon_word_written_the_normal_way_collapses(
     assert canonical_lemma(tokenizer, dicts, "省ける", "ハブケル", "省く")[0] == "省く"
 
 
-def test_archaic_spelling_of_a_common_word_is_refused(
+def test_archaic_spelling_loses_the_key_to_the_kana_spelling(
     tokenizer: Tokenizer, dicts: FakeDicts
 ) -> None:
     # とても is what gets written, so 迚も is worthless as a vocabulary key -
-    # exactly the case a single rank cannot tell from 省く above.
-    assert canonical_lemma(tokenizer, dicts, "とっても", "トッテモ", "迚も")[0] == "とっても"
+    # exactly the case a single rank cannot tell from 省く above. Refusing the
+    # collapse would leave とっても its own word; the row names the key instead.
+    assert canonical_lemma(tokenizer, dicts, "とっても", "トッテモ", "迚も") == ("とても", "トテモ")
+
+
+def test_kana_spelling_takes_the_key_from_a_base_it_routs(
+    tokenizer: Tokenizer, dicts: FakeDicts
+) -> None:
+    # 貰う has an ordinary as-written rank, so the ceiling and the
+    # written-beats-kana test would both hand it the key. もらう routing it is the
+    # only evidence that says otherwise.
+    assert canonical_lemma(tokenizer, dicts, "もらえる", "モラエル", "貰う")[0] == "もらう"
+
+
+def test_kana_spelling_that_does_not_rout_the_base_leaves_the_key_alone(
+    tokenizer: Tokenizer, dicts: FakeDicts
+) -> None:
+    # はまる beats 嵌まる, but not by the margin: a word written both ways does not
+    # give the kana spelling the key on a narrow win. Neither spelling qualifies
+    # here, so the form keeps its own key.
+    spellings = dicts.lookup_spellings("嵌まる")
+    assert spellings.kana * KANA_SPELLING_MARGIN > spellings.written
+    assert canonical_lemma(tokenizer, dicts, "ハマる", "ハマル", "嵌まる")[0] == "ハマる"
+
+
+def test_base_ranked_only_in_kana_takes_the_kana_spelling_over_the_ceiling(
+    tokenizer: Tokenizer, dicts: FakeDicts
+) -> None:
+    # べい is far over the ceiling, but JPDB ranks the word in kana and nowhere
+    # else, so there is no rival spelling for the ceiling to be protecting.
+    assert canonical_lemma(tokenizer, dicts, "べ", "ベ", "べい")[0] == "べい"
 
 
 def test_base_ranked_only_through_its_kana_spelling_collapses(

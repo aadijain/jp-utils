@@ -28,7 +28,7 @@ The API is **batch-first**: send many texts in one request and get results align
 
 `/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword - a potential form retries as its base verb, so 作れる finds 作る. `/meaning` and `/pitch` have one attempt after that, against the kanji spelling of a word counted in kana, because the dictionaries file those under the kanji: もらう finds 貰う. Each result echoes whichever key answered.
 
-An inflected form counts as the word it belongs to, so a sentence with 作れる asks you to know 作る, not a separate word. Alternate spellings of a real word are left alone: 捜す stays 捜す rather than becoming 探す. Needs the dict cache; without it, forms are counted as written.
+An inflected form counts as the word it belongs to, so a sentence with 作れる asks you to know 作る, not a separate word. Alternate spellings of a real word are left alone: 捜す stays 捜す rather than becoming 探す. The word is counted under the spelling Japanese actually uses for it, which is sometimes the kana one: とっても counts as とても, not as the archaic 迚も. Needs the dict cache; without it, forms are counted as written.
 
 The audio endpoint is a pass-through proxy to a [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) server (set its base URL with `JP_UTILS_AUDIO_URL`, default `http://127.0.0.1:5050`).
 
