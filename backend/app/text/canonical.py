@@ -34,9 +34,13 @@ the kana spelling of the same word - and their order is the whole answer:
 迚も ranks 152585 against とても's 329, so it is archaic and worthless as a key,
 while 省く ranks 10363 against はぶく's 48758, so it is simply an uncommon word
 written the normal way. A single rank cannot tell those apart; both look "rare".
+
+`written_spelling` reads the same pairing backwards, for the words the store
+already keys in kana: it names the kanji spelling a dictionary is likely to file
+one under.
 """
 
-from app.dicts import DictCache
+from app.dicts import DictCache, Spellings
 from app.text.tokenizer import Tokenizer
 
 # Backstop for the bases JPDB gives no kana spelling to compare against: with
@@ -68,18 +72,34 @@ def canonical_lemma(
         return lemma, reading
     if dicts.lookup_frequency(lemma) is not None:
         return lemma, reading  # a ranked form is a word in its own right
-    if not _is_the_written_spelling(*dicts.lookup_spelling_ranks(normalized)):
+    if not _is_the_written_spelling(dicts.lookup_spellings(normalized)):
         return lemma, reading
     return normalized, tokenizer.reading_of(normalized) or reading
 
 
-def _is_the_written_spelling(written: int | None, kana: int | None) -> bool:
+def written_spelling(dicts: DictCache, lemma: str, normalized: str) -> str | None:
+    """The kanji spelling of a lemma the store keys in kana, or None.
+
+    A kana lemma is frequently not a jitendex headword - it lists 貰う, not もらう -
+    so a meaning or pitch lookup on one misses however common the word is. The
+    spelling to retry is Sudachi's normalization of it, and JPDB pairing that
+    spelling back to this lemma is what makes the retry safe: 貰う's kana spelling
+    IS もらう, so it is the same word, while 菱 reads ひし rather than びし and is a
+    different word that Sudachi merely normalizes びし onto.
+    """
+    if not normalized or normalized == lemma:
+        return None
+    return normalized if dicts.lookup_spellings(normalized).kana_form == lemma else None
+
+
+def _is_the_written_spelling(spellings: Spellings) -> bool:
     """Whether the base is the spelling the language uses for that word.
 
     `written` beating `kana` settles it outright, however rare the word is. The
     ceiling stays for the two cases with nothing to compare: no kana figure, and
     a base JPDB ranks only through its kana spelling.
     """
+    written, kana = spellings.written, spellings.kana
     if written is None:
         return kana is not None and kana <= CANONICAL_MAX_RANK
     if kana is None:

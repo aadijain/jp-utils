@@ -50,6 +50,18 @@ def test_lookup_meaning_falls_back_to_the_deinflected_lemma(
     assert result.entries[0].senses[0].glosses == ["to eat"]
 
 
+def test_lookup_meaning_falls_back_to_the_written_spelling_of_a_kana_key(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    # もらう is what the collapse keys on and JPDB ranks it 112, so neither the
+    # lemma as written nor the deinflected key gets past it - but jitendex lists
+    # only 貰う, the spelling the collapse overrode.
+    result = lookup_meaning(tokenizer, cache, MeaningQuery(lemma="もらう"))
+    assert (result.lemma, result.reading) == ("貰う", "もらう")
+    assert result.entries[0].senses[0].glosses == ["to receive"]
+
+
 def test_lookup_meaning_keeps_a_lemma_that_is_already_a_headword(
     tokenizer: Tokenizer, built_cache: Path
 ) -> None:

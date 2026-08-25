@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from app.dicts import DictCache
+from app.dicts import DictCache, Spellings
 from app.dicts.parsers import (
     parse_jitendex,
     parse_jmdict_furigana,
@@ -89,10 +89,20 @@ def test_parse_jpdb_freq_marks_kana_form(synthetic_dicts: Path) -> None:
     rows = list(parse_jpdb_freq(synthetic_dicts / "jpdb-freq-list.zip"))
     # kana-form rows: the bare みず entry and the ㋕-marked 水/みず kana spelling.
     kana = [r for r in rows if r.is_kana_form]
-    assert {(r.term, r.reading) for r in kana} == {("みず", "みず"), ("水", "みず")}
+    assert {(r.term, r.reading) for r in kana} == {
+        ("みず", "みず"),
+        ("水", "みず"),
+        ("もらう", "もらう"),
+        ("貰う", "もらう"),
+    }
     # kanji rows carry their own reading, threaded through from the JPDB entry.
     kanji = {(r.term, r.reading): r.rank for r in rows if not r.is_kana_form}
-    assert kanji == {("水", "みず"): 500, ("水", "すい"): 800, ("食べる", "たべる"): 700}
+    assert kanji == {
+        ("水", "みず"): 500,
+        ("水", "すい"): 800,
+        ("食べる", "たべる"): 700,
+        ("貰う", "もらう"): 1295,
+    }
 
 
 def test_parse_furigana_keeps_full_segmentation(synthetic_dicts: Path) -> None:
@@ -111,6 +121,7 @@ def test_parse_pitch_yields_one_row_per_position(synthetic_dicts: Path) -> None:
         ("人", "ひと", 2),
         ("人", "にん", 1),
         ("食べる", "たべる", 2),
+        ("貰う", "もらう", 0),
     }
 
 
@@ -121,10 +132,10 @@ def test_build_cache_reports_entries(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
     status = {s.name: s for s in cache.status()}
-    assert status["meanings"].entries == 3  # 食べる, 水, 人/ひと (low-score readings dropped)
-    assert status["frequencies"].entries == 4  # (水,みず), (水,すい), (みず,みず), (食べる,たべる)
+    assert status["meanings"].entries == 4  # 食べる, 水, 人/ひと (low-score readings dropped), 貰う
+    assert status["frequencies"].entries == 6  # + (貰う,もらう), (もらう,もらう)
     assert status["furigana"].entries == 6  # 食べる, 水, 日本語, 人/ひと, 人/じん, 十分
-    assert status["pitches"].entries == 5  # 水/みず, 人/ひと x2, 人/にん, 食べる/たべる
+    assert status["pitches"].entries == 6  # 水/みず, 人/ひと x2, 人/にん, 食べる, 貰う
     assert all(s.loaded for s in status.values())
 
 
@@ -168,16 +179,18 @@ def test_lookup_frequency_prefers_kanji_rank(built_cache: Path) -> None:
     assert cache.lookup_frequency("存在しない") is None
 
 
-def test_lookup_spelling_ranks_keeps_both_figures(built_cache: Path) -> None:
+def test_lookup_spellings_keeps_both_figures(built_cache: Path) -> None:
     cache = DictCache.open(built_cache)
     assert cache is not None
     # Both figures survive the build, so a caller can compare them: 水 is ranked
     # as written and again through its kana spelling; みず has only the kana
-    # figure, 食べる only the as-written one.
-    assert cache.lookup_spelling_ranks("水") == (500, 2100)
-    assert cache.lookup_spelling_ranks("みず") == (None, 1500)
-    assert cache.lookup_spelling_ranks("食べる") == (700, None)
-    assert cache.lookup_spelling_ranks("存在しない") == (None, None)
+    # figure, 食べる only the as-written one. The as-written figure is the best
+    # across readings (500 for みず beats 800 for すい) while the kana figure
+    # comes with the spelling it ranks, so a caller can key on it.
+    assert cache.lookup_spellings("水") == Spellings(500, 2100, "みず")
+    assert cache.lookup_spellings("みず") == Spellings(None, 1500, "みず")
+    assert cache.lookup_spellings("食べる") == Spellings(700, None, None)
+    assert cache.lookup_spellings("存在しない") == Spellings(None, None, None)
 
 
 def test_lookup_frequency_disambiguates_by_reading(built_cache: Path) -> None:

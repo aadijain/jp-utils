@@ -2,25 +2,27 @@
 
 import pytest
 
-from app.text.canonical import CANONICAL_MAX_RANK, canonical_lemma
+from app.dicts import Spellings
+from app.text.canonical import CANONICAL_MAX_RANK, canonical_lemma, written_spelling
 from app.text.tokenizer import Tokenizer
 
 
 class FakeDicts:
-    """The two lookups `canonical_lemma` uses, over a hand-written rank table.
+    """The two lookups this module uses, over a hand-written rank table.
 
-    Each term maps to `(as-written rank, kana-spelling rank)`, as JPDB gives them.
+    Each term maps to `(as-written rank, kana-spelling rank, kana spelling)`, as
+    JPDB gives them.
     """
 
-    def __init__(self, ranks: dict[str, tuple[int | None, int | None]]) -> None:
+    def __init__(self, ranks: dict[str, Spellings]) -> None:
         self._ranks = ranks
 
     def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
-        written, kana = self._ranks.get(term, (None, None))
-        return written if written is not None else kana
+        sp = self._ranks.get(term, Spellings(None, None, None))
+        return sp.written if sp.written is not None else sp.kana
 
-    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
-        return self._ranks.get(term, (None, None))
+    def lookup_spellings(self, term: str) -> Spellings:
+        return self._ranks.get(term, Spellings(None, None, None))
 
 
 @pytest.fixture
@@ -28,16 +30,20 @@ def dicts() -> FakeDicts:
     # 作れる / 子ども are unranked residue; 捜す is a ranked variant of 探す.
     # 省く is written the normal way but uncommon; 迚も is an archaic spelling of
     # a very common word; 鮟鱇 has no kana figure to be compared against.
+    # 貰う is the spelling a dictionary files もらう under.
     return FakeDicts(
         {
-            "作る": (140, 2763),
-            "子供": (422, 23368),
-            "捜す": (2123, 12703),
-            "探す": (421, 12703),
-            "鮟鱇": (119997, None),
-            "省く": (10363, 48758),
-            "迚も": (152585, 329),
-            "ちっ": (None, 2831),
+            "作る": Spellings(140, 2763, "つくる"),
+            "子供": Spellings(422, 23368, "こども"),
+            "捜す": Spellings(2123, 12703, "さがす"),
+            "探す": Spellings(421, 12703, "さがす"),
+            "鮟鱇": Spellings(119997, None, None),
+            "省く": Spellings(10363, 48758, "はぶく"),
+            "迚も": Spellings(152585, 329, "とても"),
+            "ちっ": Spellings(None, 2831, "ちっ"),
+            "貰う": Spellings(1295, 112, "もらう"),
+            "菱": Spellings(None, 40000, "ひし"),
+            "べい": Spellings(None, 93514, "べい"),
         }
     )
 
@@ -62,7 +68,7 @@ def test_base_over_the_ceiling_with_nothing_to_compare_is_refused(
 ) -> None:
     # Collapsing onto a spelling nobody writes trades one dead key for another,
     # and with no kana figure the ceiling is the only evidence there is.
-    assert dicts.lookup_spelling_ranks("鮟鱇") == (119997, None)
+    assert dicts.lookup_spellings("鮟鱇") == Spellings(119997, None, None)
     assert canonical_lemma(tokenizer, dicts, "あんこう", "アンコウ", "鮟鱇")[0] == "あんこう"
 
 
@@ -71,8 +77,8 @@ def test_uncommon_word_written_the_normal_way_collapses(
 ) -> None:
     # 省く is far over the ceiling, but it beats its own kana spelling, so it is
     # an uncommon word rather than an archaic spelling of a common one.
-    written, kana = dicts.lookup_spelling_ranks("省く")
-    assert written > CANONICAL_MAX_RANK and written < kana
+    spellings = dicts.lookup_spellings("省く")
+    assert spellings.written > CANONICAL_MAX_RANK and spellings.written < spellings.kana
     assert canonical_lemma(tokenizer, dicts, "省ける", "ハブケル", "省く")[0] == "省く"
 
 
@@ -103,3 +109,23 @@ def test_form_that_is_already_its_own_base(tokenizer: Tokenizer, dicts: FakeDict
 def test_without_a_dict_cache_nothing_collapses(tokenizer: Tokenizer) -> None:
     # No gate available, so the rule cannot tell residue from a real word.
     assert canonical_lemma(tokenizer, None, "作れる", "ツクレル", "作る") == ("作れる", "ツクレル")
+
+
+def test_written_spelling_answers_for_a_key_jpdb_pairs_with_it(dicts: FakeDicts) -> None:
+    # もらう has no jitendex entry, and 貰う - the spelling the collapse overrode -
+    # is the same word, because JPDB spells 貰う もらう.
+    assert written_spelling(dicts, "もらう", "貰う") == "貰う"
+
+
+def test_written_spelling_refuses_a_normalization_onto_a_different_word(
+    dicts: FakeDicts,
+) -> None:
+    # Sudachi normalizes びし onto 菱, but 菱 reads ひし: a different word, and
+    # serving its definition would be worse than serving none.
+    assert written_spelling(dicts, "びし", "菱") is None
+
+
+def test_written_spelling_has_nothing_to_offer_a_form_that_is_its_own_base(
+    dicts: FakeDicts,
+) -> None:
+    assert written_spelling(dicts, "べい", "べい") is None

@@ -8,13 +8,14 @@ stable env-var names, filenames, and a shared default location so a single copy
 of each dictionary can be reused across tools.
 """
 
-from app.dicts.cache import DictCache, build_cache
+from app.dicts.cache import DictCache, Spellings, build_cache
 from app.dicts.paths import DICT_FILENAMES, DictKind, resolve_dict_path
 
 __all__ = [
     "DICT_FILENAMES",
     "DictCache",
     "DictKind",
+    "Spellings",
     "build_cache",
     "resolve_dict_path",
 ]

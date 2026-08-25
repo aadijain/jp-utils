@@ -12,13 +12,15 @@ second lookup.
 The lemma is looked up **as written first** - a surface that is already a
 headword is the right entry, and going through the deinflected form
 unconditionally would flatten homograph readings. Only a miss is retried against
-the deinflected key, so an inflected word field still gets a definition. The
-result echoes whichever key answered.
+the deinflected key, so an inflected word field still gets a definition, and only
+a miss on that is retried against the written spelling, so a kana key jitendex
+does not list (もらう, which it lists as 貰う) still gets one. The result echoes
+whichever key answered.
 """
 
 from app.dicts import DictCache
 from app.text.convert import kata_to_hira
-from app.text.normalize import deinflected_key
+from app.text.normalize import deinflected_key, written_spelling_key
 from app.text.tokenizer import Tokenizer
 from shared.text import (
     ExampleSegment,
@@ -79,8 +81,10 @@ def lookup_meaning(tokenizer: Tokenizer, cache: DictCache, query: MeaningQuery) 
         return MeaningResult(
             lemma=query.lemma, reading=query.reading, entries=entries, all_readings=all_readings
         )
-    key = deinflected_key(tokenizer, query.lemma, cache)
-    if key is not None:
+    for retry in (deinflected_key, written_spelling_key):
+        key = retry(tokenizer, query.lemma, cache)
+        if key is None:
+            continue
         alt_entries, alt_readings = _entries(cache, key[0], key[1])
         if alt_entries:
             return MeaningResult(

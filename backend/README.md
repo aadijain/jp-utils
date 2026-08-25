@@ -26,7 +26,7 @@ The API is **batch-first**: send many texts in one request and get results align
 | `POST /locate` | Find a word in a sentence by its dictionary form (inflection-aware, and across a word the tokenizer splits), returning the sentence split into segments with the match flagged. The flagged slice covers the word's own conjugation and stops where the next word starts - used to highlight the mined word |
 | `POST /audio` | Pronunciation audio for a batch of words, proxied from a local-audio-yomichan server |
 
-`/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword - a potential form retries as its base verb, so 作れる finds 作る. Each result echoes whichever key answered.
+`/meaning`, `/frequency` and `/pitch` look the word up **as written first**, and retry a miss against the deinflected lemma (with that lemma's own reading), so an inflected word form still resolves without flattening a homograph that is already a headword - a potential form retries as its base verb, so 作れる finds 作る. `/meaning` and `/pitch` have one attempt after that, against the kanji spelling of a word counted in kana, because the dictionaries file those under the kanji: もらう finds 貰う. Each result echoes whichever key answered.
 
 An inflected form counts as the word it belongs to, so a sentence with 作れる asks you to know 作る, not a separate word. Alternate spellings of a real word are left alone: 捜す stays 捜す rather than becoming 探す. Needs the dict cache; without it, forms are counted as written.
 

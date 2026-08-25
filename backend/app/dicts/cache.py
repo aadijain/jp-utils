@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from app.dicts.parsers import (
     parse_jitendex,
@@ -225,6 +226,19 @@ class DictTableStatus:
     entries: int
 
 
+class Spellings(NamedTuple):
+    """How JPDB ranks a term as written, against the kana spelling of that word.
+
+    `kana_form` is the spelling `kana` is the rank of, so a caller that decides
+    the kana spelling wins has the string to key on, and one that arrives at a
+    kana key later can ask which written spelling JPDB pairs with it.
+    """
+
+    written: int | None
+    kana: int | None
+    kana_form: str | None
+
+
 class DictCache:
     """Read-only accessor over a built cache. Store one instance in app state."""
 
@@ -242,7 +256,7 @@ class DictCache:
         # within one. Bounded, per-instance (a module-level decorator here would
         # leak `self`), and shared across threads - `lru_cache` is thread-safe.
         self._lookup_frequency = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._frequency)
-        self._lookup_spelling_ranks = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._spelling_ranks)
+        self._lookup_spellings = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._spellings)
         self._lookup_furigana = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._furigana)
         self._lookup_pitch = lru_cache(maxsize=_LOOKUP_CACHE_SIZE)(self._pitch)
 
@@ -349,28 +363,38 @@ class DictCache:
         ).fetchone()
         return row["rank"] if row and row["rank"] is not None else None
 
-    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
-        """`(as-written rank, kana-spelling rank)` for a term. Memoized.
+    def lookup_spellings(self, term: str) -> Spellings:
+        """How JPDB spells the word this term is - see :class:`Spellings`. Memoized.
 
-        Either may be None: a term JPDB ranks only through its kana spelling has
-        no as-written figure, and one it never writes in kana has no kana figure.
-        Comparing the two answers whether this spelling is the one the language
-        uses for the word, which `lookup_frequency`'s single number cannot.
+        Either rank may be None: a term JPDB ranks only through its kana spelling
+        has no as-written figure, and one it never writes in kana has no kana
+        figure. Comparing the two answers whether this spelling is the one the
+        language uses for the word, which `lookup_frequency`'s single number
+        cannot.
         """
-        return self._lookup_spelling_ranks(term)
+        return self._lookup_spellings(term)
 
-    def _spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
-        """Uncached :meth:`lookup_spelling_ranks`, best of each across readings."""
-        row = (
-            self._conn()
-            .execute(
-                "SELECT MIN(rank) AS written, MIN(kana_rank) AS kana "
-                "FROM frequencies WHERE term = ?",
-                (term,),
-            )
-            .fetchone()
-        )
-        return (row["written"], row["kana"]) if row else (None, None)
+    def _spellings(self, term: str) -> Spellings:
+        """Uncached :meth:`lookup_spellings`, best of each figure across readings.
+
+        The kana figure and its spelling come from one row, so `kana_form` is
+        always the spelling `kana` ranks; the as-written figure is taken across
+        readings independently, because it answers a question about the term
+        rather than about a particular reading of it.
+        """
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT MIN(rank) AS written FROM frequencies WHERE term = ?", (term,)
+        ).fetchone()
+        written = row["written"] if row else None
+        row = conn.execute(
+            "SELECT reading, kana_rank FROM frequencies "
+            "WHERE term = ? AND kana_rank IS NOT NULL ORDER BY kana_rank ASC LIMIT 1",
+            (term,),
+        ).fetchone()
+        if row is None:
+            return Spellings(written, None, None)
+        return Spellings(written, row["kana_rank"], row["reading"])
 
     def lookup_frequency_many(self, terms: Iterable[str]) -> dict[str, int]:
         """Best rank per term, lemma-only; unranked terms are absent from the map.
@@ -457,7 +481,7 @@ class DictCache:
         shutdown - nothing should keep the results alive past it.
         """
         self._lookup_frequency.cache_clear()
-        self._lookup_spelling_ranks.cache_clear()
+        self._lookup_spellings.cache_clear()
         self._lookup_furigana.cache_clear()
         self._lookup_pitch.cache_clear()
         conn = getattr(self._local, "conn", None)

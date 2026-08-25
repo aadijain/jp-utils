@@ -128,6 +128,9 @@ _JITENDEX_ROWS = [
     ["人", "ひと", "", "", 200, ["person"], 1101000, ""],
     ["人", "じん", "", "", 0, ["-ian; -er (nationality, origin)"], 1101001, ""],
     ["人", "にん", "", "", -1, ["counter for people"], 1101002, ""],
+    # 貰う: listed under the kanji spelling only, though もらう is what gets
+    # written - the case a kana collapse key has to retry out of.
+    ["貰う", "もらう", "", "", 100, ["to receive"], 1611820, ""],
 ]
 
 _JPDB_ROWS = [
@@ -139,6 +142,11 @@ _JPDB_ROWS = [
     ["みず", "freq", {"value": 1500, "displayValue": "1500㋕"}],  # kana form
     # A verb, so an inflected surface has a lemma to fall back to.
     ["食べる", "freq", {"reading": "たべる", "frequency": {"value": 700}}],
+    # 貰う is ranked as written and again through もらう, which far outranks it -
+    # the pairing that leads a lookup on the kana spelling back to the kanji one.
+    ["貰う", "freq", {"reading": "もらう", "frequency": {"value": 1295}}],
+    ["貰う", "freq", {"reading": "もらう", "frequency": {"value": 112, "displayValue": "112㋕"}}],
+    ["もらう", "freq", {"value": 112, "displayValue": "112㋕"}],
 ]
 
 _PITCH_ROWS = [
@@ -149,6 +157,8 @@ _PITCH_ROWS = [
     ["人", "pitch", {"reading": "にん", "pitches": [{"position": 1}]}],
     # A verb, so an inflected surface has a lemma to fall back to.
     ["食べる", "pitch", {"reading": "たべる", "pitches": [{"position": 2}]}],
+    # 貰う carries the accent もらう has none of, being filed by kanji spelling.
+    ["貰う", "pitch", {"reading": "もらう", "pitches": [{"position": 0}]}],
     # A non-pitch meta row in the same bank must be ignored.
     ["水", "freq", {"value": 500}],
 ]

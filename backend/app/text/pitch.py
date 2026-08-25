@@ -8,12 +8,15 @@ verb/adjective undulating class) is POS-driven and left to the renderer.
 
 The term is looked up **as written first**, and only a miss is retried against
 the deinflected key, so an inflected word field still gets an accent without
-losing a surface that is already a headword. The result echoes whichever key
-answered, and the categories are computed from that key's reading.
+losing a surface that is already a headword. A miss on that is retried against
+the written spelling, because Kanjium keys accents by the kanji spelling and the
+collapse can key a word in kana (もらう, whose accent is filed under 貰う). The
+result echoes whichever key answered, and the categories are computed from that
+key's reading.
 """
 
 from app.dicts import DictCache
-from app.text.normalize import deinflected_key
+from app.text.normalize import deinflected_key, written_spelling_key
 from app.text.tokenizer import Tokenizer
 from shared.text import PitchQuery, PitchResult
 
@@ -49,8 +52,10 @@ def lookup_pitch(tokenizer: Tokenizer, cache: DictCache, query: PitchQuery) -> P
     positions = cache.lookup_pitch(query.term, query.reading)
     if positions:
         return _result(query.term, query.reading, positions)
-    key = deinflected_key(tokenizer, query.term, cache)
-    if key is not None:
+    for retry in (deinflected_key, written_spelling_key):
+        key = retry(tokenizer, query.term, cache)
+        if key is None:
+            continue
         positions = cache.lookup_pitch(*key)
         if positions:
             return _result(key[0], key[1], positions)

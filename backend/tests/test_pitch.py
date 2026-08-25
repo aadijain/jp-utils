@@ -58,6 +58,18 @@ def test_lookup_pitch_falls_back_to_the_deinflected_term(
     assert result.categories == ["nakadaka"]
 
 
+def test_lookup_pitch_falls_back_to_the_written_spelling_of_a_kana_key(
+    tokenizer: Tokenizer, built_cache: Path
+) -> None:
+    cache = DictCache.open(built_cache)
+    assert cache is not None
+    # Kanjium files the accent under 貰う; もらう is a word in its own right, so
+    # the first two attempts both stop there with nothing (もらう, 3 morae).
+    result = lookup_pitch(tokenizer, cache, PitchQuery(term="もらう"))
+    assert (result.term, result.reading, result.positions) == ("貰う", "もらう", [0])
+    assert result.categories == ["heiban"]
+
+
 def test_lookup_pitch_keeps_a_surface_that_already_has_an_accent(
     tokenizer: Tokenizer, built_cache: Path
 ) -> None:

@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.dicts import Spellings
 from app.text.normalize import deinflected_key, normalize
 from app.text.tokenizer import Tokenizer
 from app.text.words import content_words
@@ -121,9 +122,9 @@ class _FakeDicts:
     def lookup_frequency(self, term: str, reading: str | None = None) -> int | None:
         return self._ranks.get(term)
 
-    def lookup_spelling_ranks(self, term: str) -> tuple[int | None, int | None]:
+    def lookup_spellings(self, term: str) -> Spellings:
         # As-written ranks only; the kana-spelling comparison has test_canonical.
-        return (self._ranks.get(term), None)
+        return Spellings(self._ranks.get(term), None, None)
 
 
 def test_card_side_collapses_to_the_same_key_as_the_sentence_side(tokenizer: Tokenizer) -> None:
